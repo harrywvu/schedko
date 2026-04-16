@@ -12,8 +12,6 @@ import { checkSchedulesInDB } from './processes/dbService.js'
 import dotenv from 'dotenv';
 dotenv.config();
 
-let ocrResults = []; // Store all parsed objects here
-let filteredResults = []; // Store filtered results based on class code
 
 const app = express();
 app.use(cors());
@@ -47,6 +45,7 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
     const outputDir = path.join('server/pages');
     const outputName = path.join(outputDir, 'page');
 
+    // Step 1: Convert PDF → images (needed to read page 1 for metadata)
     await new Promise((resolve, reject) => {
       convertPdfToImage(pdfPath, outputName, err => err ? reject(err) : resolve());
     });
@@ -58,6 +57,7 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
       return res.status(400).json({ success: false, message: 'No pages found in PDF after conversion' });
     }
 
+    // Step 2: OCR page 1 only — extract metadata (examSem, academicYear)
     const firstPageText = await recognizeText(path.join(outputDir, pageImages[0]));
     const firstLine = firstPageText.split('\n')[0];
     const semMatch = firstLine.match(/midterm|finals/i);
@@ -69,7 +69,18 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
       return res.status(400).json({ success: false, message: 'Could not extract examSem or academicYear' });
     }
 
-    ocrResults = [];
+    // Step 3: Query DB — return cached result immediately if found
+    const existing = await checkSchedulesInDB(classCode, examSem, academicYear);
+    if (existing.length > 0) {
+      return res.status(200).json({
+        success: true,
+        message: 'Schedules already exist in DB. Skipping OCR.',
+        data: existing
+      });
+    }
+
+    // Step 4: Cache miss — run full OCR across all pages
+    const ocrResults = [];
 
     for (const img of pageImages) {
       const text = await recognizeText(path.join(outputDir, img));
@@ -92,21 +103,11 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
       }
     }
 
-    filteredResults = ocrResults.filter(obj => obj.classCode === classCode);
+    // Step 5: Filter to the requested classCode, persist, and respond
+    const filteredResults = ocrResults.filter(obj => obj.classCode === classCode);
 
     if (filteredResults.length === 0) {
       return res.status(404).json({ success: false, message: 'No matching schedule data found in OCR' });
-    }
-
-    const sample = filteredResults[0];
-    const existing = await checkSchedulesInDB(sample.classCode, sample.examSem, sample.academicYear);
-
-    if (existing.length > 0) {
-      return res.status(200).json({
-        success: true,
-        message: 'Schedules already exist in DB. Skipping insertion.',
-        data: existing
-      });
     }
 
     await insertExamSchedules(filteredResults);
@@ -119,10 +120,6 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
 });
 
 
-// --- OCR Results Route ---
-app.get('/api/ocr-results', (req, res) => {
-  res.json({ success: true, data: ocrResults });
-});
 
 // --- Get All Schedules in DB ---
 app.get('/api/schedules', async (req, res) => {

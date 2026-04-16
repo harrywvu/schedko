@@ -46,17 +46,7 @@ const Hero = () => {
     setSubmittedClassCode(classCode); // Store for display/testing
     setShowClassCodePrompt(false); // Hide modal immediately
     setShowClassCodeDisplay(true); // Show display
-    // Send class code to server
-    try {
-      await fetch('http://localhost:3000/api/classcode', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ classCode }),
-      });
-    } catch (err) {
-      // Optionally handle error
-    }
-    // Now upload the file
+    // Upload the file with classCode included in FormData
     const formData = new FormData();
     formData.append('file', fileToUpload);
     formData.append('classCode', classCode);
