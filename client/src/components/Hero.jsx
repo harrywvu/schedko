@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { DotLottieReact } from '@lottiefiles/dotlottie-react';
 import './schedko-modal.css';
+import { mockSchedules } from '../data/mockSchedules';
 
 
 const Hero = () => {
@@ -46,24 +47,33 @@ const Hero = () => {
     setSubmittedClassCode(classCode); // Store for display/testing
     setShowClassCodePrompt(false); // Hide modal immediately
     setShowClassCodeDisplay(true); // Show display
-    // Upload the file with classCode included in FormData
-    const formData = new FormData();
-    formData.append('file', fileToUpload);
-    formData.append('classCode', classCode);
     setIsUploading(true);
     setValidationStatus(null);
     try {
-      const response = await fetch('http://localhost:3000/api/upload', {
+      const formData = new FormData();
+      formData.append('file', fileToUpload);
+      formData.append('classCode', classCode.trim());
+
+      const response = await fetch('http://localhost:8000/upload', {
         method: 'POST',
         body: formData,
       });
-      const result = await response.json();
-      if (response.ok && result.success) {
+
+      if (!response.ok) {
+        throw new Error('Upload failed');
+      }
+
+      await new Promise(resolve => setTimeout(resolve, 300));
+      const normalizedCode = classCode.trim().toLowerCase();
+      const matchedSchedules = mockSchedules.filter(
+        sched => sched.classCode.toLowerCase() === normalizedCode
+      );
+
+      if (matchedSchedules.length > 0) {
         setValidationStatus(true);
         setShowConfirmation(true); // Show confirmation modal
         // Navigate to results page with data
-        navigate('/results', { state: { dbSchedules: result.data || [] } });
-
+        navigate('/results', { state: { dbSchedules: matchedSchedules } });
       } else {
         setValidationStatus(false);
       }

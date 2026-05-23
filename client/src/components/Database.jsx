@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { mockSchedules } from '../data/mockSchedules';
 
 function groupByClassCode(schedules) {
   const grouped = {};
@@ -15,34 +16,10 @@ const Database = () => {
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    const fetchSchedules = async () => {
-      try {
-        setLoading(true);
-        setError(null);
-        
-        console.log('Fetching schedules from /api/schedules...');
-        const response = await fetch('/api/schedules');
-        
-        console.log('Response status:', response.status);
-        const data = await response.json();
-        console.log('Response data:', data);
-        
-        if (data.success) {
-          console.log('Schedules fetched successfully:', data.data.length, 'records');
-          setGrouped(groupByClassCode(data.data));
-        } else {
-          console.error('API returned error:', data.message);
-          setError(data.message || 'Failed to fetch schedules');
-        }
-      } catch (err) {
-        console.error('Fetch error:', err);
-        setError(`Network error: ${err.message}`);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchSchedules();
+    setLoading(true);
+    setError(null);
+    setGrouped(groupByClassCode(mockSchedules));
+    setLoading(false);
   }, []);
 
   if (loading) {

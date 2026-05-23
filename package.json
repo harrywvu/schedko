@@ -1,9 +1,13 @@
 {
-  "dependencies": {
-    "@fullcalendar/core": "^6.1.17",
-    "@fullcalendar/daygrid": "^6.1.17",
-    "@fullcalendar/react": "^6.1.17",
-    "@fullcalendar/timegrid": "^6.1.17",
-    "html2canvas": "^1.4.1"
+  "name": "schedko",
+  "private": true,
+  "workspaces": [
+    "client"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace client",
+    "build": "npm run build --workspace client",
+    "lint": "npm run lint --workspace client",
+    "preview": "npm run preview --workspace client"
   }
 }
