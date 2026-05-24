@@ -13,8 +13,9 @@ from dotenv import load_dotenv
 load_dotenv()
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-GEMINI_URL = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_API_KEY}"
-semaphore = asyncio.Semaphore(10)
+
+GEMINI_URL = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GEMINI_API_KEY}"
+
 EXTRACTION_PROMPT = """
 Extract every row from this exam schedule table as a JSON array.
 Each object must have these exact keys:
@@ -58,17 +59,12 @@ async def upload(file: UploadFile = File(...)):
 
     images = convert_from_bytes(contents, dpi=200)
 
-    async with httpx.AsyncClient() as client:
-        tasks = [extract_page(client, image) for image in images]
-        results = await asyncio.gather(*tasks)
-
-    all_rows = [row for page in results for row in page]
+    all_rows = await extract_all_pages(images)
     print(f"Extracted {len(all_rows)} rows total")
 
     return {"hash": file_hash, "status": "new", "pages": len(images), "rows": len(all_rows)}
 
-async def extract_page(client: httpx.AsyncClient, image: any) -> list:
-    async with semaphore:
+async def extract_page(client: httpx.AsyncClient, image) -> list:
         buffer = BytesIO()
         image.save(buffer, format="JPEG")
         b64 = base64.b64encode(buffer.getvalue()).decode()
@@ -91,3 +87,14 @@ async def extract_page(client: httpx.AsyncClient, image: any) -> list:
 
         text = data["candidates"][0]["content"]["parts"][0]["text"]
         return json.loads(text)
+
+async def extract_all_pages(images) -> list:
+    all_rows = []
+    async with httpx.AsyncClient() as client:
+        for i, image in enumerate(images):
+            print(f"Processing page {i + 1}/{len(images)}")
+            rows = await extract_page(client, image)
+            all_rows.extend(rows)
+            if i < len(images) - 1:
+                await asyncio.sleep(13)  # stay under 5 RPM
+    return all_rows
