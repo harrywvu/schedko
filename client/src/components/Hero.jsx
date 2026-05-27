@@ -2,7 +2,6 @@ import React, { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { DotLottieReact } from '@lottiefiles/dotlottie-react';
 import './schedko-modal.css';
-import { mockSchedules } from '../data/mockSchedules';
 
 
 const Hero = () => {
@@ -13,7 +12,7 @@ const Hero = () => {
   const [showClassCodePrompt, setShowClassCodePrompt] = useState(false);
   const [classCode, setClassCode] = useState("");
   const [submittedClassCode, setSubmittedClassCode] = useState("");
-  const [fileToUpload, setFileToUpload] = useState(null);
+  const [uploadedFileHash, setUploadedFileHash] = useState("");
   const [showClassCodeDisplay, setShowClassCodeDisplay] = useState(false);
   const navigate = useNavigate();
 
@@ -36,23 +35,13 @@ const Hero = () => {
     }
   };
 
-  const handleFileSelect = (file) => {
+  const handleFileUpload = async (file) => {
     if (!file) return;
-    setShowClassCodePrompt(true); // Prompt for class code immediately
-    setFileToUpload(file);
-  };
-
-  const handleClassCodeSubmit = async () => {
-    if (!classCode.trim() || !fileToUpload) return;
-    setSubmittedClassCode(classCode); // Store for display/testing
-    setShowClassCodePrompt(false); // Hide modal immediately
-    setShowClassCodeDisplay(true); // Show display
     setIsUploading(true);
     setValidationStatus(null);
     try {
       const formData = new FormData();
-      formData.append('file', fileToUpload);
-      formData.append('classCode', classCode.trim());
+      formData.append('file', file);
 
       const response = await fetch('http://localhost:8000/upload', {
         method: 'POST',
@@ -63,17 +52,55 @@ const Hero = () => {
         throw new Error('Upload failed');
       }
 
-      await new Promise(resolve => setTimeout(resolve, 300));
-      const normalizedCode = classCode.trim().toLowerCase();
-      const matchedSchedules = mockSchedules.filter(
-        sched => sched.classCode.toLowerCase() === normalizedCode
-      );
+      const data = await response.json();
+      if (!data?.hash) {
+        throw new Error('Missing hash');
+      }
 
-      if (matchedSchedules.length > 0) {
+      setUploadedFileHash(data.hash);
+      setShowClassCodePrompt(true);
+    } catch (error) {
+      setValidationStatus(false);
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const handleFileSelect = (file) => {
+    handleFileUpload(file);
+  };
+
+  const handleFileAndClassCodeSubmission = async () => {
+    if (!classCode.trim() || !uploadedFileHash) return;
+    setSubmittedClassCode(classCode); // Store for display/testing
+    setShowClassCodePrompt(false); // Hide modal immediately
+    setShowClassCodeDisplay(true); // Show display
+    setIsUploading(true);
+    setValidationStatus(null);
+    try {
+      const response = await fetch('http://localhost:8000/schedule', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          hash: uploadedFileHash,
+          classCode: classCode.trim(),
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Schedule lookup failed');
+      }
+
+      const data = await response.json();
+      const rows = Array.isArray(data?.rows) ? data.rows : [];
+
+      if (rows.length > 0) {
         setValidationStatus(true);
         setShowConfirmation(true); // Show confirmation modal
         // Navigate to results page with data
-        navigate('/results', { state: { dbSchedules: matchedSchedules } });
+        navigate('/results', { state: { dbSchedules: rows } });
       } else {
         setValidationStatus(false);
       }
@@ -81,7 +108,6 @@ const Hero = () => {
       setValidationStatus(false);
     } finally {
       setIsUploading(false);
-      setFileToUpload(null);
       setClassCode("");
     }
     // Fade out the class code display after 4 seconds
@@ -106,11 +132,11 @@ const Hero = () => {
             <div className="schedko-modal-actions">
               <button
                 className="schedko-modal-btn-cancel"
-                onClick={() => { setShowClassCodePrompt(false); setFileToUpload(null); }}
+                onClick={() => { setShowClassCodePrompt(false); setUploadedFileHash(""); setClassCode(""); }}
               >Cancel</button>
               <button
                 className="schedko-modal-btn-submit"
-                onClick={handleClassCodeSubmit}
+                onClick={handleFileAndClassCodeSubmission}
                 disabled={!classCode.trim()}
               >Submit</button>
             </div>
