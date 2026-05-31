@@ -41,8 +41,15 @@ function parseDateValue(value) {
   }
 
   const candidates = [raw];
+  const withoutParenthetical = raw.replace(/\s*\([^)]*\)\s*$/, '').trim();
+  if (withoutParenthetical && withoutParenthetical !== raw) {
+    candidates.push(withoutParenthetical);
+  }
   if (raw.includes(',')) {
-    candidates.push(raw.split(',', 1)[1].trim());
+    const commaTail = raw.split(',').slice(1).join(',').trim();
+    if (commaTail) {
+      candidates.push(commaTail);
+    }
   }
 
   for (const candidate of candidates) {
@@ -74,7 +81,7 @@ function parseDateValue(value) {
 }
 
 function parseTimeSegment(segment) {
-  const raw = normalizeText(segment).toLowerCase();
+  const raw = normalizeText(segment).toLowerCase().replace(/\./g, '');
   if (!raw) {
     return null;
   }
@@ -199,67 +206,71 @@ export function normalizeScheduleEvents(scheduleInput) {
   const rows = flattenScheduleInput(scheduleInput);
 
   return rows.flatMap((row, index) => {
-    if (!row || typeof row !== 'object') {
+    try {
+      if (!row || typeof row !== 'object') {
+        return [];
+      }
+
+      if (isAlreadyCalendarEvent(row)) {
+        return [row];
+      }
+
+      const examDayValue = row.exam_day ?? row.examDay ?? row.class_day ?? row.class_days ?? row.day;
+      const examTimeValue = row.exam_time ?? row.examTime ?? row.class_time;
+      const examDate = parseDateValue(examDayValue);
+      const timeRange = parseTimeRange(examTimeValue);
+
+      if (!timeRange) {
+        return [];
+      }
+
+      const title = row.subject || row.course_year || row.major_exam || 'Exam';
+      const id = [
+        row.file_hash || row.hash || 'schedko',
+        row.course_year || 'course',
+        row.subject || 'subject',
+        examTimeValue || 'time',
+        examDayValue || 'day',
+        index,
+      ].join('-');
+
+      if (examDate) {
+        return [
+          {
+            id,
+            title,
+            start: buildDateTime(examDate, timeRange.start.hour, timeRange.start.minute),
+            end: buildDateTime(examDate, timeRange.end.hour, timeRange.end.minute),
+            extendedProps: {
+              ...row,
+              exam_day: examDayValue,
+              exam_time: examTimeValue,
+            },
+          },
+        ];
+      }
+
+      const daysOfWeek = parseDaysOfWeek(examDayValue);
+      if (daysOfWeek.length > 0) {
+        return [
+          {
+            id,
+            title,
+            daysOfWeek,
+            startTime: `${String(timeRange.start.hour).padStart(2, '0')}:${String(timeRange.start.minute).padStart(2, '0')}:00`,
+            endTime: `${String(timeRange.end.hour).padStart(2, '0')}:${String(timeRange.end.minute).padStart(2, '0')}:00`,
+            extendedProps: {
+              ...row,
+              exam_day: examDayValue,
+              exam_time: examTimeValue,
+            },
+          },
+        ];
+      }
+
+      return [];
+    } catch {
       return [];
     }
-
-    if (isAlreadyCalendarEvent(row)) {
-      return [row];
-    }
-
-    const examDayValue = row.exam_day ?? row.examDay ?? row.class_day ?? row.class_days ?? row.day;
-    const examTimeValue = row.exam_time ?? row.examTime ?? row.class_time;
-    const examDate = parseDateValue(examDayValue);
-    const timeRange = parseTimeRange(examTimeValue);
-
-    if (!timeRange) {
-      return [];
-    }
-
-    const title = row.subject || row.course_year || row.major_exam || 'Exam';
-    const id = [
-      row.file_hash || row.hash || 'schedko',
-      row.course_year || 'course',
-      row.subject || 'subject',
-      examTimeValue || 'time',
-      examDayValue || 'day',
-      index,
-    ].join('-');
-
-    if (examDate) {
-      return [
-        {
-          id,
-          title,
-          start: buildDateTime(examDate, timeRange.start.hour, timeRange.start.minute),
-          end: buildDateTime(examDate, timeRange.end.hour, timeRange.end.minute),
-          extendedProps: {
-            ...row,
-            exam_day: examDayValue,
-            exam_time: examTimeValue,
-          },
-        },
-      ];
-    }
-
-    const daysOfWeek = parseDaysOfWeek(examDayValue);
-    if (daysOfWeek.length > 0) {
-      return [
-        {
-          id,
-          title,
-          daysOfWeek,
-          startTime: `${String(timeRange.start.hour).padStart(2, '0')}:${String(timeRange.start.minute).padStart(2, '0')}:00`,
-          endTime: `${String(timeRange.end.hour).padStart(2, '0')}:${String(timeRange.end.minute).padStart(2, '0')}:00`,
-          extendedProps: {
-            ...row,
-            exam_day: examDayValue,
-            exam_time: examTimeValue,
-          },
-        },
-      ];
-    }
-
-    return [];
   });
 }

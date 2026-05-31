@@ -136,12 +136,10 @@ async def init_db():
                 file_hash TEXT NOT NULL,
                 subject TEXT,
                 class_time TEXT,
-                class_day TEXT,
                 class_days TEXT,
                 exam_time TEXT,
                 exam_day TEXT,
                 course_year TEXT,
-                num_students TEXT,
                 instructor TEXT,
                 examiner TEXT,
                 exam_room TEXT,
@@ -149,9 +147,6 @@ async def init_db():
                 major_exam TEXT,
                 semester TEXT,
                 academic_year TEXT,
-                day TEXT,
-                room TEXT,
-                building TEXT,
                 FOREIGN KEY (file_hash) REFERENCES files(hash)
             )
         """)
@@ -163,7 +158,6 @@ async def init_db():
         await _ensure_column(db, "files", "processing_started_at", "processing_started_at TIMESTAMP")
         await _ensure_column(db, "files", "processed_at", "processed_at TIMESTAMP")
         await _ensure_column(db, "files", "updated_at", "updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
-        await _ensure_column(db, "schedules", "class_day", "class_day TEXT")
         await _ensure_column(db, "schedules", "class_days", "class_days TEXT")
         await _ensure_column(db, "schedules", "exam_time", "exam_time TEXT")
         await _ensure_column(db, "schedules", "exam_day", "exam_day TEXT")

@@ -8,10 +8,14 @@ import { normalizeScheduleEvents } from '../utils/scheduleEvents';
 const Results = () => {
   const location = useLocation();
   const navigate = useNavigate();
-  const events = React.useMemo(
-    () => normalizeScheduleEvents(location.state?.dbSchedules || location.state?.events || []),
-    [location.state],
-  );
+  const events = React.useMemo(() => {
+    try {
+      return normalizeScheduleEvents(location.state?.events || location.state?.dbSchedules || []);
+    } catch (error) {
+      console.error('Failed to normalize schedule events:', error);
+      return [];
+    }
+  }, [location.state?.events, location.state?.dbSchedules]);
 
   React.useEffect(() => {
     if (location.state) {

@@ -132,21 +132,20 @@ async def persist_rows(file_hash, all_rows):
         async with aiosqlite.connect(DB_PATH) as db:
             db.row_factory = aiosqlite.Row
             rows_to_insert = []
+            seen_keys = set()
             for row in all_rows:
                 if not isinstance(row, dict):
                     continue
 
                 schedule_row = normalize_schedule_row({**row, "file_hash": file_hash})
-                rows_to_insert.append((
+                dedupe_key = (
                     schedule_row["file_hash"],
                     schedule_row["subject"],
                     schedule_row["class_time"],
-                    schedule_row["class_day"],
                     schedule_row["class_days"],
-                    schedule_row["exam_time"],
                     schedule_row["exam_day"],
+                    schedule_row["exam_time"],
                     schedule_row["course_year"],
-                    schedule_row["num_students"],
                     schedule_row["instructor"],
                     schedule_row["examiner"],
                     schedule_row["exam_room"],
@@ -154,19 +153,35 @@ async def persist_rows(file_hash, all_rows):
                     schedule_row["major_exam"],
                     schedule_row["semester"],
                     schedule_row["academic_year"],
-                    schedule_row["day"],
-                    schedule_row["room"],
-                    schedule_row["building"],
+                )
+                if dedupe_key in seen_keys:
+                    continue
+                seen_keys.add(dedupe_key)
+                rows_to_insert.append((
+                    schedule_row["file_hash"],
+                    schedule_row["subject"],
+                    schedule_row["class_time"],
+                    schedule_row["class_days"],
+                    schedule_row["exam_time"],
+                    schedule_row["exam_day"],
+                    schedule_row["course_year"],
+                    schedule_row["instructor"],
+                    schedule_row["examiner"],
+                    schedule_row["exam_room"],
+                    schedule_row["exam_building"],
+                    schedule_row["major_exam"],
+                    schedule_row["semester"],
+                    schedule_row["academic_year"],
                 ))
 
             await db.executemany(
                 """
                 INSERT INTO schedules (
-                    file_hash, subject, class_time, class_day, class_days,
-                    exam_time, exam_day, course_year, num_students,
+                    file_hash, subject, class_time, class_days,
+                    exam_time, exam_day, course_year,
                     instructor, examiner, exam_room, exam_building,
-                    major_exam, semester, academic_year, day, room, building
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    major_exam, semester, academic_year
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 rows_to_insert,
             )

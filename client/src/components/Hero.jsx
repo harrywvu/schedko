@@ -240,12 +240,13 @@ const Hero = () => {
 
       const data = await response.json();
       const rows = Array.isArray(data?.rows) ? data.rows : [];
+      const events = Array.isArray(data?.events) ? data.events : [];
 
       if (rows.length > 0) {
         setShowClassCodeDisplay(true);
         setShowClassCodePrompt(false);
         // Navigate to results page with data
-        navigate('/results', { state: { dbSchedules: rows } });
+        navigate('/results', { state: { dbSchedules: rows, events } });
         setClassCode("");
       } else {
         setScheduleLookupStatus(false);

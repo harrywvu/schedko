@@ -11,7 +11,7 @@ from db import (
     _has_schedule_rows,
     _processing_payload,
 )
-from parsing import normalize_lookup_value, rows_to_events
+from parsing import normalize_lookup_value, normalize_schedule_row, rows_to_events
 from processing import start_processing_job
 from schemas import ScheduleRequest
 
@@ -245,7 +245,7 @@ async def schedule(payload: ScheduleRequest):
         rows = await cursor.fetchall()
 
     serialized_rows = [
-        dict(row)
+        normalize_schedule_row(dict(row))
         for row in rows
         if normalize_lookup_value(row["course_year"]) == normalized_code
     ]

@@ -58,10 +58,11 @@ def parse_exam_date(value: str):
         return None
 
     candidates = [raw]
+    without_parenthetical = re.sub(r"\s*\([^)]*\)\s*$", "", raw).strip()
+    if without_parenthetical and without_parenthetical != raw:
+        candidates.append(without_parenthetical)
     if "," in raw:
-        candidates.append(raw.split(",", 1)[1].strip())
-    if " " in raw:
-        candidates.append(raw)
+        candidates.append(raw.split(",", 1)[0].strip())
 
     formats = [
         "%Y-%m-%d",
@@ -70,8 +71,12 @@ def parse_exam_date(value: str):
         "%m-%d-%Y",
         "%b %d %Y",
         "%B %d %Y",
+        "%b %d, %Y",
+        "%B %d, %Y",
         "%d %b %Y",
         "%d %B %Y",
+        "%d %b, %Y",
+        "%d %B, %Y",
     ]
 
     for candidate in candidates:
@@ -93,7 +98,8 @@ TIME_PART_RE = re.compile(r"^\s*(\d{1,2})(?::(\d{2}))?\s*([ap]m)?\s*$", re.IGNOR
 
 
 def parse_time_segment(segment: str):
-    match = TIME_PART_RE.match(str(segment or ""))
+    normalized = str(segment or "").replace(".", "")
+    match = TIME_PART_RE.match(normalized)
     if not match:
         return None
 
@@ -138,19 +144,14 @@ def build_datetime(date_value, hour: int, minute: int) -> str:
 
 
 def normalize_schedule_row(row: dict) -> dict:
-    exam_day = row.get("exam_day") or row.get("class_day") or row.get("class_days") or row.get("day")
-    exam_time = row.get("exam_time") or row.get("class_time")
-
     return {
         "file_hash": row.get("file_hash"),
         "subject": row.get("subject"),
-        "class_time": exam_time,
-        "class_day": exam_day,
-        "class_days": row.get("class_days") or exam_day,
-        "exam_time": exam_time,
-        "exam_day": exam_day,
+        "class_time": row.get("class_time") or row.get("classTime") or row.get("exam_time"),
+        "class_days": row.get("class_days") or row.get("classDays") or row.get("class_day") or row.get("day"),
+        "exam_time": row.get("exam_time") or row.get("examTime") or row.get("class_time"),
+        "exam_day": row.get("exam_day") or row.get("examDay") or row.get("class_day") or row.get("day"),
         "course_year": row.get("course_year"),
-        "num_students": row.get("num_students"),
         "instructor": row.get("instructor"),
         "examiner": row.get("examiner"),
         "exam_room": row.get("exam_room") or row.get("room"),
@@ -158,9 +159,6 @@ def normalize_schedule_row(row: dict) -> dict:
         "major_exam": row.get("major_exam"),
         "semester": row.get("semester"),
         "academic_year": row.get("academic_year"),
-        "day": exam_day,
-        "room": row.get("exam_room") or row.get("room"),
-        "building": row.get("exam_building") or row.get("building"),
     }
 
 
@@ -171,20 +169,8 @@ def rows_to_events(rows: list[dict]) -> list[dict]:
         if not isinstance(row, dict):
             continue
 
-        exam_day_value = coalesce_row_value(
-            row,
-            "exam_day",
-            "examDay",
-            "class_day",
-            "class_days",
-            "day",
-        )
-        exam_time_value = coalesce_row_value(
-            row,
-            "exam_time",
-            "examTime",
-            "class_time",
-        )
+        exam_day_value = coalesce_row_value(row, "exam_day", "examDay", "class_day", "class_days", "day")
+        exam_time_value = coalesce_row_value(row, "exam_time", "examTime", "class_time")
         time_range = parse_time_range(exam_time_value)
         exam_date = parse_exam_date(exam_day_value)
         days_of_week = normalize_day_code(exam_day_value)
