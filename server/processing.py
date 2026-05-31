@@ -3,13 +3,13 @@ import base64
 import json
 from io import BytesIO
 
-import aiosqlite
+import asyncpg
 import httpx
 from fastapi import HTTPException, status
 from pdf2image import convert_from_bytes
 
-from config import DB_PATH, EXTRACTION_PROMPT, GEMINI_URL, MAX_ATTEMPTS_TO_RETRY
-from db import _delete_file_artifacts, _set_file_state
+from config import EXTRACTION_PROMPT, GEMINI_URL, MAX_ATTEMPTS_TO_RETRY
+from db import _delete_file_artifacts, _set_file_state, get_pool
 from parsing import normalize_schedule_row
 from state import BACKGROUND_TASKS, PROCESSING_TASKS
 
@@ -129,62 +129,62 @@ async def persist_rows(file_hash, all_rows):
     if not isinstance(all_rows, list):
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Invalid rows format.")
     try:
-        async with aiosqlite.connect(DB_PATH) as db:
-            db.row_factory = aiosqlite.Row
-            rows_to_insert = []
-            seen_keys = set()
-            for row in all_rows:
-                if not isinstance(row, dict):
-                    continue
+        pool = await get_pool()
+        async with pool.acquire() as db:
+            async with db.transaction():
+                rows_to_insert = []
+                seen_keys = set()
+                for row in all_rows:
+                    if not isinstance(row, dict):
+                        continue
 
-                schedule_row = normalize_schedule_row({**row, "file_hash": file_hash})
-                dedupe_key = (
-                    schedule_row["file_hash"],
-                    schedule_row["subject"],
-                    schedule_row["class_time"],
-                    schedule_row["class_days"],
-                    schedule_row["exam_day"],
-                    schedule_row["exam_time"],
-                    schedule_row["course_year"],
-                    schedule_row["instructor"],
-                    schedule_row["examiner"],
-                    schedule_row["exam_room"],
-                    schedule_row["exam_building"],
-                    schedule_row["major_exam"],
-                    schedule_row["semester"],
-                    schedule_row["academic_year"],
+                    schedule_row = normalize_schedule_row({**row, "file_hash": file_hash})
+                    dedupe_key = (
+                        schedule_row["file_hash"],
+                        schedule_row["subject"],
+                        schedule_row["class_time"],
+                        schedule_row["class_days"],
+                        schedule_row["exam_day"],
+                        schedule_row["exam_time"],
+                        schedule_row["course_year"],
+                        schedule_row["instructor"],
+                        schedule_row["examiner"],
+                        schedule_row["exam_room"],
+                        schedule_row["exam_building"],
+                        schedule_row["major_exam"],
+                        schedule_row["semester"],
+                        schedule_row["academic_year"],
+                    )
+                    if dedupe_key in seen_keys:
+                        continue
+                    seen_keys.add(dedupe_key)
+                    rows_to_insert.append((
+                        schedule_row["file_hash"],
+                        schedule_row["subject"],
+                        schedule_row["class_time"],
+                        schedule_row["class_days"],
+                        schedule_row["exam_time"],
+                        schedule_row["exam_day"],
+                        schedule_row["course_year"],
+                        schedule_row["instructor"],
+                        schedule_row["examiner"],
+                        schedule_row["exam_room"],
+                        schedule_row["exam_building"],
+                        schedule_row["major_exam"],
+                        schedule_row["semester"],
+                        schedule_row["academic_year"],
+                    ))
+
+                await db.executemany(
+                    """
+                    INSERT INTO schedules (
+                        file_hash, subject, class_time, class_days,
+                        exam_time, exam_day, course_year,
+                        instructor, examiner, exam_room, exam_building,
+                        major_exam, semester, academic_year
+                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+                    """,
+                    rows_to_insert,
                 )
-                if dedupe_key in seen_keys:
-                    continue
-                seen_keys.add(dedupe_key)
-                rows_to_insert.append((
-                    schedule_row["file_hash"],
-                    schedule_row["subject"],
-                    schedule_row["class_time"],
-                    schedule_row["class_days"],
-                    schedule_row["exam_time"],
-                    schedule_row["exam_day"],
-                    schedule_row["course_year"],
-                    schedule_row["instructor"],
-                    schedule_row["examiner"],
-                    schedule_row["exam_room"],
-                    schedule_row["exam_building"],
-                    schedule_row["major_exam"],
-                    schedule_row["semester"],
-                    schedule_row["academic_year"],
-                ))
-
-            await db.executemany(
-                """
-                INSERT INTO schedules (
-                    file_hash, subject, class_time, class_days,
-                    exam_time, exam_day, course_year,
-                    instructor, examiner, exam_room, exam_building,
-                    major_exam, semester, academic_year
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                rows_to_insert,
-            )
-            await db.commit()
-    except aiosqlite.Error as exc:
+    except asyncpg.PostgresError as exc:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"DB error: {exc}")
