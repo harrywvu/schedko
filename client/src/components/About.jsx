@@ -1,25 +1,49 @@
 import React from 'react';
 
+const pillars = [
+  {
+    title: 'Fast schedule extraction',
+    text: 'Turn dense university exam PDFs into a readable schedule with less manual searching.',
+  },
+  {
+    title: 'Focused student workflow',
+    text: 'Enter your program details once and jump straight to the exams that matter to you.',
+  },
+  {
+    title: 'Clear calendar output',
+    text: 'See each exam in a structured timetable that is easier to scan, compare, and plan around.',
+  },
+];
+
 const About = () => (
-  <div className="min-h-screen bg-gray-50 flex items-center justify-center py-8">
-    <div className="max-w-3xl w-full px-4 sm:px-6 lg:px-8">
-      <div className="bg-white rounded-xl shadow p-8 border-t-4 border-green-400">
-        <h1 className="font-lora text-3xl font-bold text-green-900 mb-4">About SchedKo</h1>
-        <p className="font-jost text-lg text-green-900 mb-4">
-          <strong>SchedKo</strong> is a smart exam schedule generator built for students. It takes the hassle out of finding your exam dates by turning messy, university-issued PDF schedules into a clean, personalized calendar—just for you.
-        </p>
-        <ul className="list-disc pl-6 font-jost text-green-900 mb-4">
-          <li>Upload your exam schedule file once—no searching line by line</li>
-          <li>Powerful OCR extracts and organizes data behind the scenes</li>
-          <li>Find your section easily with smart search and auto-matching</li>
-          <li>See your exams in a Google Calendar–style view</li>
-          <li>Download your schedule or sync it to your calendar app</li>
-        </ul>
-        <p className="font-jost text-green-900">
-          Designed for simplicity, speed, and the students who just want clarity during exam season. SchedKo is your exam schedule—on your terms.
+  <div className="page-shell">
+    <section className="page-hero">
+      <div className="page-hero-copy">
+        <p className="page-eyebrow">About SchedKo</p>
+        <h1 className="page-title">A cleaner way to read exam schedules.</h1>
+        <p className="page-lead">
+          SchedKo is built to take a crowded exam PDF and turn it into a timetable that is easier to
+          understand, easier to trust, and easier to act on during exam season.
         </p>
       </div>
-    </div>
+
+      <div className="page-panel">
+        <h2 className="panel-title">What it does</h2>
+        <p className="panel-text">
+          Upload the official exam file, identify your section, and get a schedule view that keeps
+          the important details together instead of scattering them across multiple pages.
+        </p>
+      </div>
+    </section>
+
+    <section className="page-grid">
+      {pillars.map((pillar) => (
+        <article key={pillar.title} className="info-card">
+          <h3>{pillar.title}</h3>
+          <p>{pillar.text}</p>
+        </article>
+      ))}
+    </section>
   </div>
 );
 

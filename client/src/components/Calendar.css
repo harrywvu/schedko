@@ -21,6 +21,16 @@
   align-items: stretch;
 }
 
+.calendar-range-note {
+  background: linear-gradient(135deg, #effdf5 0%, #fdf8e7 100%);
+  border: 1px solid rgba(21, 128, 61, 0.15);
+  color: #14532d;
+  font-weight: 600;
+  border-radius: 0.85rem;
+  padding: 0.75rem 1rem;
+  margin-bottom: 0.75rem;
+}
+
 .calendar-download-btn {
   background: var(--schedko-green);
   color: #fff;
@@ -43,11 +53,20 @@
 }
 
 .calendar-wrapper {
-  background: #fff;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
   border-radius: 1rem;
-  box-shadow: 0 1px 4px 0 rgba(21,128,61,0.06);
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
   padding: 0.5rem;
   overflow-x: auto;
+}
+
+.calendar-export-note {
+  background: #0f172a;
+  color: #fff;
+  font-size: 0.9rem;
+  padding: 0.65rem 0.9rem;
+  border-radius: 0.75rem;
+  margin-bottom: 0.75rem;
 }
 
 /* FullCalendar font and color override */
@@ -59,7 +78,7 @@
   color: var(--schedko-green-dark);
 }
 .fc .fc-button {
-  background: var(--schedko-green);
+  background: #0f5132;
   border: none;
   color: #fff;
   font-family: var(--font-jost);
@@ -68,22 +87,79 @@
   transition: background 0.2s;
 }
 .fc .fc-button:hover, .fc .fc-button:focus {
-  background: var(--schedko-gold);
-  color: var(--schedko-green-dark);
+  background: #f4b400;
+  color: #0f172a;
+}
+.fc .fc-scrollgrid {
+  border-color: rgba(15, 23, 42, 0.08) !important;
+}
+.fc .fc-timegrid-slot, .fc .fc-timegrid-axis, .fc .fc-col-header-cell {
+  border-color: rgba(15, 23, 42, 0.08) !important;
+}
+.fc .fc-timegrid-slot-label-cushion {
+  font-size: 0.84rem;
+  font-weight: 600;
 }
 .fc .fc-col-header-cell-cushion, .fc .fc-timegrid-slot-label-cushion {
   color: var(--schedko-green-dark);
   font-family: var(--font-jost);
 }
 .fc .fc-event {
-  background: var(--schedko-gold);
-  color: var(--schedko-green-dark);
-  border: 1.5px solid var(--schedko-green);
+  background: var(--event-bg, #60a5fa) !important;
+  color: #000000 !important;
+  border: 1px solid var(--event-border, rgba(15, 23, 42, 0.12)) !important;
   font-family: var(--font-jost);
-  border-radius: 0.5rem;
+  border-radius: 0.75rem;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.12);
+  overflow: hidden;
+}
+.fc .fc-event *,
+.fc .fc-event .fc-event-main,
+.fc .fc-event .fc-event-main-frame,
+.fc .fc-event .fc-event-title,
+.fc .fc-event .fc-event-time {
+  color: #000000 !important;
+}
+.fc .fc-timegrid-event-harness,
+.fc .fc-timegrid-event {
+  min-height: 92px;
+}
+.fc .fc-timegrid-event {
+  width: calc(100% - 2px);
+}
+.fc .fc-event-main {
+  height: 100%;
+}
+.fc .fc-event-main-frame {
+  padding: 0.35rem 0.45rem;
 }
 .fc .fc-event-title {
   font-family: var(--font-lora);
+}
+
+.calendar-event-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 0.15rem 0.05rem;
+  min-height: 88px;
+}
+
+.calendar-event-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.calendar-event-meta,
+.calendar-event-submeta {
+  font-size: 0.75rem;
+  line-height: 1.2;
+  opacity: 1;
+}
+
+.calendar-event-submeta {
+  font-weight: 500;
 }
 
 @media (max-width: 900px) {

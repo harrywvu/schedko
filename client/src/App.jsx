@@ -6,7 +6,6 @@ import HowItWorks from './components/HowItWorks'
 import Footer from './components/Footer'
 import Schedule from './components/Schedule'
 import Results from './components/Results'
-import Database from './components/Database'
 import About from './components/About'
 import Support from './components/Support'
 
@@ -22,7 +21,6 @@ function App() {
             <HowItWorks />
           </>
         } />
-        <Route path="/database" element={<Database />} />
         <Route path="/schedule" element={<Schedule />} />
         <Route path="/results" element={<Results />} />
         <Route path="/about" element={<About />} />

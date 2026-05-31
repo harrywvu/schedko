@@ -1,39 +1,65 @@
 import React from 'react';
 
+const faqs = [
+  {
+    question: 'My upload fails or stalls.',
+    answer: 'Use a PDF under 10 MB and make sure the scan is readable. If the file came from a phone photo, a cleaner export usually works better.',
+  },
+  {
+    question: 'My section or class code is not detected.',
+    answer: 'Try the exact spelling or a tighter version without spaces and punctuation. For example, use `bsit2a` instead of `BSIT 2-A`.',
+  },
+  {
+    question: 'The timetable looks incomplete.',
+    answer: 'That usually means the source scan is hard to parse. Re-upload a clearer file or check whether the schedule has multiple pages for your section.',
+  },
+  {
+    question: 'Can I replace an uploaded file?',
+    answer: 'Yes. Uploading a new file replaces the current flow and lets you generate a fresh schedule.',
+  },
+];
+
 const Support = () => (
-  <div className="min-h-screen bg-gray-50 flex items-center justify-center py-8">
-    <div className="max-w-3xl w-full px-4 sm:px-6 lg:px-8">
-      <div className="bg-white rounded-xl shadow p-8 border-t-4 border-yellow-400">
-        <h1 className="font-lora text-3xl font-bold text-green-900 mb-4">Need Help?</h1>
-        <p className="font-jost text-lg text-green-900 mb-4">
-          If you're having trouble using <strong>SchedKo</strong>, this page is here to help. Below are common issues and how to solve them.
-        </p>
-
-        <h2 className="font-lora text-2xl font-bold text-green-900 mt-6 mb-2">Frequently Asked Questions</h2>
-        <ul className="list-disc pl-6 font-jost text-green-900 mb-4">
-          <li><strong>Why isn’t my file uploading?</strong>  
-            <br />Make sure it’s a PDF file and under 10MB in size.
-          </li>
-          <li><strong>The system didn’t detect my section.</strong>  
-            <br />Double-check your spelling or formatting. Try searching with no spaces or dashes (e.g. <code>bsit2a</code>).
-          </li>
-          <li><strong>My schedule looks wrong.</strong>  
-            <br />The exam file might have poor scan quality. Try adjusting brightness and reuploading.
-          </li>
-          <li><strong>Can I reupload a file?</strong>  
-            <br />Yes — just select a new file and your schedule will update automatically.
-          </li>
-        </ul>
-
-        <h2 className="font-lora text-2xl font-bold text-green-900 mt-6 mb-2">Still Stuck?</h2>
-        <p className="font-jost text-green-900 mb-2">
-          If you encounter a bug or have suggestions, feel free to reach out via email:
-        </p>
-        <p className="font-jost text-green-900 font-semibold">
-          📩 <a href="johnny.vu2004@gmail.com" className="underline">johnny.vu2004@gmail.com</a>
+  <div className="page-shell">
+    <section className="page-hero">
+      <div className="page-hero-copy">
+        <p className="page-eyebrow">Support</p>
+        <h1 className="page-title">Help when the exam file does not behave.</h1>
+        <p className="page-lead">
+          The app is designed for messy real-world PDFs, but scans vary. These notes cover the most
+          common issues and the fastest way to fix them.
         </p>
       </div>
-    </div>
+
+      <div className="page-panel">
+        <h2 className="panel-title">Need a quick check?</h2>
+        <ul className="panel-list">
+          <li>Use a clear PDF scan, not a blurry image export.</li>
+          <li>Match your class code exactly when possible.</li>
+          <li>Refresh the file if the schedule source has changed.</li>
+        </ul>
+      </div>
+    </section>
+
+    <section className="stacked-section">
+      <h2 className="section-title">Common questions</h2>
+      <div className="faq-grid">
+        {faqs.map((faq) => (
+          <article key={faq.question} className="faq-card">
+            <h3>{faq.question}</h3>
+            <p>{faq.answer}</p>
+          </article>
+        ))}
+      </div>
+    </section>
+
+    <section className="contact-banner">
+      <div>
+        <h2>Still stuck?</h2>
+        <p>Send a message with the file name and what went wrong so the issue can be reproduced quickly.</p>
+      </div>
+      <a href="mailto:johnny.vu2004@gmail.com">johnny.vu2004@gmail.com</a>
+    </section>
   </div>
 );
 
