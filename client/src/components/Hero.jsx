@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { DotLottieReact } from '@lottiefiles/dotlottie-react';
 import './schedko-modal.css';
@@ -8,13 +8,138 @@ const Hero = () => {
   const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [validationStatus, setValidationStatus] = useState(null);
-  const [showConfirmation, setShowConfirmation] = useState(false);
+  const [showNewFilePrompt, setShowNewFilePrompt] = useState(false);
+  const [showProcessingModal, setShowProcessingModal] = useState(false);
   const [showClassCodePrompt, setShowClassCodePrompt] = useState(false);
+  const [scheduleLookupStatus, setScheduleLookupStatus] = useState(null);
+  const [processingInfo, setProcessingInfo] = useState(null);
+  const [processingHash, setProcessingHash] = useState("");
+  const [processingMode, setProcessingMode] = useState(null);
   const [classCode, setClassCode] = useState("");
   const [submittedClassCode, setSubmittedClassCode] = useState("");
   const [uploadedFileHash, setUploadedFileHash] = useState("");
+  const [pendingFile, setPendingFile] = useState(null);
   const [showClassCodeDisplay, setShowClassCodeDisplay] = useState(false);
   const navigate = useNavigate();
+  const progressTimerRef = useRef(null);
+
+  const clearIncompleteServerState = async (fileHash) => {
+    if (!fileHash) {
+      return;
+    }
+
+    try {
+      await fetch(`http://localhost:8000/processing/${fileHash}/cancel`, {
+        method: 'POST',
+      });
+    } catch {
+      // Best-effort cleanup. Local state is still cleared immediately.
+    }
+  };
+
+  const resetUploadFlow = async (shouldClearServerState = false) => {
+    const fileHashToClear = shouldClearServerState
+      ? (processingMode === 'own' ? processingHash || uploadedFileHash : uploadedFileHash)
+      : null;
+
+    if (fileHashToClear) {
+      void clearIncompleteServerState(fileHashToClear);
+    }
+
+    if (progressTimerRef.current) {
+      clearInterval(progressTimerRef.current);
+      progressTimerRef.current = null;
+    }
+    setShowNewFilePrompt(false);
+    setShowProcessingModal(false);
+    setShowClassCodePrompt(false);
+    setScheduleLookupStatus(null);
+    setProcessingInfo(null);
+    setProcessingHash("");
+    setProcessingMode(null);
+    setUploadedFileHash("");
+    setPendingFile(null);
+    setClassCode("");
+    setValidationStatus(null);
+  };
+
+  const formatEta = (seconds) => {
+    if (seconds === null || seconds === undefined) {
+      return 'Calculating...';
+    }
+
+    if (seconds < 60) {
+      return `~${Math.max(1, Math.round(seconds))} sec`;
+    }
+
+    const minutes = Math.ceil(seconds / 60);
+    return `~${minutes} min`;
+  };
+
+  const startProcessingPoll = (fileHash, mode = 'own') => {
+    setProcessingHash(fileHash);
+    setProcessingMode(mode);
+    setShowProcessingModal(true);
+  };
+
+  useEffect(() => {
+    if (!showProcessingModal || !processingHash) {
+      return undefined;
+    }
+
+    let cancelled = false;
+
+    const pollProgress = async () => {
+      try {
+        const response = await fetch(`http://localhost:8000/processing/${processingHash}`);
+        if (!response.ok) {
+          throw new Error('Processing status unavailable');
+        }
+
+        const data = await response.json();
+        if (cancelled) return;
+
+        setProcessingInfo(data);
+
+        if (data.status === 'ready') {
+          setShowProcessingModal(false);
+          setValidationStatus(true);
+          setPendingFile(null);
+
+          if (processingMode === 'busy') {
+            setProcessingInfo(null);
+            setProcessingHash("");
+            setProcessingMode(null);
+            setShowNewFilePrompt(true);
+          } else {
+            setShowClassCodePrompt(true);
+            setProcessingHash("");
+            setProcessingInfo(null);
+            setProcessingMode(null);
+          }
+        } else if (data.status === 'failed') {
+          setShowProcessingModal(false);
+          setValidationStatus(false);
+          setProcessingMode(null);
+        }
+      } catch {
+        if (!cancelled) {
+          setProcessingInfo((current) => current || { message: 'Waiting for progress updates...' });
+        }
+      }
+    };
+
+    pollProgress();
+    progressTimerRef.current = setInterval(pollProgress, 2000);
+
+    return () => {
+      cancelled = true;
+      if (progressTimerRef.current) {
+        clearInterval(progressTimerRef.current);
+        progressTimerRef.current = null;
+      }
+    };
+  }, [showProcessingModal, processingHash, processingMode]);
 
   const handleDragOver = (e) => {
     e.preventDefault();
@@ -37,8 +162,11 @@ const Hero = () => {
 
   const handleFileUpload = async (file) => {
     if (!file) return;
+    setPendingFile(file);
     setIsUploading(true);
     setValidationStatus(null);
+    setScheduleLookupStatus(null);
+    setProcessingInfo(null);
     try {
       const formData = new FormData();
       formData.append('file', file);
@@ -58,8 +186,27 @@ const Hero = () => {
       }
 
       setUploadedFileHash(data.hash);
-      setShowClassCodePrompt(true);
-    } catch (error) {
+
+      if (data.status === 'cached') {
+        setValidationStatus(true);
+        setShowClassCodePrompt(true);
+      } else if (data.status === 'processing') {
+        setValidationStatus(true);
+        setProcessingInfo(data);
+        startProcessingPoll(data.hash, 'busy');
+      } else if (data.status === 'new') {
+        setValidationStatus(true);
+        setShowNewFilePrompt(true);
+      } else {
+        setValidationStatus(true);
+        setShowClassCodePrompt(true);
+      }
+    } catch {
+      setPendingFile(null);
+      setUploadedFileHash("");
+      setShowNewFilePrompt(false);
+      setShowProcessingModal(false);
+      setShowClassCodePrompt(false);
       setValidationStatus(false);
     } finally {
       setIsUploading(false);
@@ -73,10 +220,8 @@ const Hero = () => {
   const handleFileAndClassCodeSubmission = async () => {
     if (!classCode.trim() || !uploadedFileHash) return;
     setSubmittedClassCode(classCode); // Store for display/testing
-    setShowClassCodePrompt(false); // Hide modal immediately
-    setShowClassCodeDisplay(true); // Show display
     setIsUploading(true);
-    setValidationStatus(null);
+    setScheduleLookupStatus(null);
     try {
       const response = await fetch('http://localhost:8000/schedule', {
         method: 'POST',
@@ -97,25 +242,153 @@ const Hero = () => {
       const rows = Array.isArray(data?.rows) ? data.rows : [];
 
       if (rows.length > 0) {
-        setValidationStatus(true);
-        setShowConfirmation(true); // Show confirmation modal
+        setShowClassCodeDisplay(true);
+        setShowClassCodePrompt(false);
         // Navigate to results page with data
         navigate('/results', { state: { dbSchedules: rows } });
+        setClassCode("");
       } else {
-        setValidationStatus(false);
+        setScheduleLookupStatus(false);
       }
-    } catch (error) {
-      setValidationStatus(false);
+    } catch {
+      setScheduleLookupStatus(false);
     } finally {
       setIsUploading(false);
-      setClassCode("");
     }
     // Fade out the class code display after 4 seconds
     setTimeout(() => setShowClassCodeDisplay(false), 4000);
   };
 
+  const handleProcessNewFile = async () => {
+    if (!pendingFile || !uploadedFileHash) return;
+
+    setProcessingHash(uploadedFileHash);
+    setProcessingMode('own');
+    setShowNewFilePrompt(false);
+    setShowProcessingModal(true);
+    setProcessingInfo({
+      message: 'Processing started',
+      pages_done: 0,
+      pages_total: null,
+      progress_percent: 0,
+      estimated_remaining_seconds: null,
+      status: 'processing',
+    });
+
+    try {
+      const formData = new FormData();
+      formData.append('file', pendingFile);
+      formData.append('hash', uploadedFileHash);
+
+      const response = await fetch('http://localhost:8000/process', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        if (response.status === 409) {
+          const detail = data?.detail || {};
+          setProcessingInfo({
+            message: detail.message || 'This pdf is already being processed. Please wait',
+            pages_done: detail.pages_done || 0,
+            pages_total: detail.pages_total || null,
+            progress_percent: detail.progress_percent || 0,
+            estimated_remaining_seconds: detail.estimated_remaining_seconds || null,
+            status: 'processing',
+          });
+          if (detail.activeHash) {
+            startProcessingPoll(detail.activeHash, 'busy');
+          }
+          return;
+        }
+
+        throw new Error(data?.detail || data?.message || 'Processing failed');
+      }
+
+      startProcessingPoll(data.hash || uploadedFileHash, 'own');
+    } catch {
+      setValidationStatus(false);
+      setShowProcessingModal(false);
+      setProcessingMode(null);
+    }
+  };
+
   return (
     <div className="container mx-auto px-4 py-8 sm:py-12 md:py-16 lg:py-20">
+      {/* New File Prompt Modal */}
+      {showNewFilePrompt && (
+        <div className="schedko-modal-overlay">
+          <div className="schedko-modal">
+            <h2 className="schedko-modal-title">New Exam Schedule Detected</h2>
+            <p className="text-sm text-slate-600 text-center leading-6">
+              It appears this is a new exam schedule and can&apos;t be found in the database.
+              Process file now?
+            </p>
+            <p className="text-sm text-amber-700 text-center font-semibold">
+              Estimated time: 4-5 minutes
+            </p>
+            <div className="schedko-modal-actions">
+              <button
+                className="schedko-modal-btn-cancel"
+                onClick={() => resetUploadFlow(true)}
+              >
+                Not Now
+              </button>
+              <button
+                className="schedko-modal-btn-submit"
+                onClick={handleProcessNewFile}
+              >
+                Process File
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Processing Modal */}
+      {showProcessingModal && (
+        <div className="schedko-modal-overlay">
+          <div className="schedko-modal">
+            <h2 className="schedko-modal-title">
+              {processingInfo?.message?.includes('already being processed')
+                ? 'This PDF is already being processed'
+                : 'Processing Exam Schedule'}
+            </h2>
+            <p className="text-sm text-slate-600 text-center leading-6">
+              {processingInfo?.message || 'Processing file...'}
+            </p>
+            <div className="w-full">
+              <div className="h-3 w-full rounded-full bg-slate-200 overflow-hidden">
+                <div
+                  className="h-full rounded-full bg-gradient-to-r from-green-500 to-emerald-400 transition-all duration-500"
+                  style={{
+                    width: `${processingInfo?.progress_percent || 0}%`,
+                  }}
+                />
+              </div>
+              <div className="mt-3 flex items-center justify-between text-xs text-slate-500">
+                <span>
+                  {processingInfo?.pages_done || 0}
+                  {processingInfo?.pages_total ? ` / ${processingInfo.pages_total}` : ''}
+                  {processingInfo?.pages_total ? ' pages' : ' pages'}
+                </span>
+                <span>{formatEta(processingInfo?.estimated_remaining_seconds)}</span>
+              </div>
+            </div>
+            <div className="schedko-modal-actions">
+              <button
+                className="schedko-modal-btn-cancel"
+                onClick={() => resetUploadFlow(processingMode !== 'busy' || showNewFilePrompt)}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Class Code Prompt Modal */}
       {showClassCodePrompt && (
         <div className="schedko-modal-overlay">
@@ -132,7 +405,7 @@ const Hero = () => {
             <div className="schedko-modal-actions">
               <button
                 className="schedko-modal-btn-cancel"
-                onClick={() => { setShowClassCodePrompt(false); setUploadedFileHash(""); setClassCode(""); }}
+                onClick={resetUploadFlow}
               >Cancel</button>
               <button
                 className="schedko-modal-btn-submit"
@@ -140,6 +413,11 @@ const Hero = () => {
                 disabled={!classCode.trim()}
               >Submit</button>
             </div>
+            {scheduleLookupStatus === false && (
+              <p className="mt-4 text-sm text-red-600 text-center">
+                No matching schedule was found for that class code.
+              </p>
+            )}
           </div>
         </div>
       )}

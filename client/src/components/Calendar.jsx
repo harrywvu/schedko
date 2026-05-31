@@ -3,12 +3,16 @@ import html2canvas from 'html2canvas'
 import FullCalendar from '@fullcalendar/react'
 import timeGridPlugin from '@fullcalendar/timegrid'
 import './Calendar.css';
+import { normalizeScheduleEvents } from '../utils/scheduleEvents';
 
 export default function Calendar({ events = [] }) {
   const calendarRef = useRef()
 
-  // Use passed-in events if provided, else fallback to myArray
-  const calendarEvents = events;
+  const calendarEvents = normalizeScheduleEvents(events);
+  const initialDate = (() => {
+    const firstTimedEvent = calendarEvents.find((event) => event.start);
+    return firstTimedEvent?.start ? new Date(firstTimedEvent.start) : new Date();
+  })();
 
   const downloadImage = () => {
     html2canvas(calendarRef.current).then(canvas => {
@@ -29,11 +33,10 @@ export default function Calendar({ events = [] }) {
             center: 'title',
             end: ''
           }}
-          titleFormat={() => 'Finals Exam'}
           plugins={[timeGridPlugin]}
           contentHeight="auto"
           initialView="timeGridWeek"
-          initialDate={calendarEvents[0]?.start?.slice(0, 10) || "2025-05-28"}
+          initialDate={initialDate}
           firstDay={1}
           weekends={false}
           slotMinTime="07:00:00"

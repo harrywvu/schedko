@@ -2,15 +2,24 @@ import React from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import Calendar from './Calendar';
 import './Results.css'; // Add a CSS file for Results-specific styles
+import { normalizeScheduleEvents } from '../utils/scheduleEvents';
 
 
 const Results = () => {
   const location = useLocation();
   const navigate = useNavigate();
-  
-  const events = location.state?.events || [];
+  const events = React.useMemo(
+    () => normalizeScheduleEvents(location.state?.dbSchedules || location.state?.events || []),
+    [location.state],
+  );
 
-  // Defensive: If location.state is missing or no events, show error
+  React.useEffect(() => {
+    if (location.state) {
+      console.log('location.state:', location.state);
+    }
+  }, [location.state]);
+
+  // Defensive: If location.state is missing or no schedule data, show error
   if (!location.state || events.length === 0) {
     return (
       <div className="results-container">
@@ -32,10 +41,6 @@ const Results = () => {
     );
   }
 
-  React.useEffect(() => {
-    console.log('location.state:', location.state);
-  }, [location.state]);
-
   return (
     <div className="results-container">
       <h1 className="results-title">
@@ -45,13 +50,21 @@ const Results = () => {
         <h3 className="font-semibold mb-2">Schedule Details:</h3>
         {events.map((event, index) => {
           const details = event.extendedProps || {};
-          const dateLabel = event.start ? new Date(event.start).toLocaleDateString() : 'Unknown date';
-          const examTimeLabel = details.examTime || `${new Date(event.start).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} - ${new Date(event.end).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`;
+          const startDate = event.start ? new Date(event.start) : null;
+          const endDate = event.end ? new Date(event.end) : null;
+          const dayLabel = startDate
+            ? startDate.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })
+            : Array.isArray(event.daysOfWeek)
+              ? event.daysOfWeek.map((day) => ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][day]).join(', ')
+              : (details.exam_day || 'Unknown day');
+          const examTimeLabel = startDate && endDate
+            ? `${startDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - ${endDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+            : (details.exam_time || `${event.startTime || 'Unknown'} - ${event.endTime || 'Unknown'}`);
 
           return (
           <div key={event.id || `${event.title}-${index}`} className="results-detail-item">
-            <strong>{event.title}</strong> - {dateLabel} {examTimeLabel} - 
-            Examiner {details.examiner || 'TBA'} - Room {details.room || 'TBA'} - {details.building || 'TBA'}
+            <strong>{event.title}</strong> - {dayLabel} {examTimeLabel} - 
+            Examiner {details.examiner || 'TBA'} - Room {details.exam_room || details.room || 'TBA'} - {details.exam_building || details.building || 'TBA'}
           </div>
           );
         })}
