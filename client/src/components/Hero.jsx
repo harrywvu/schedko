@@ -4,6 +4,8 @@ import { DotLottieReact } from '@lottiefiles/dotlottie-react';
 import './schedko-modal.css';
 
 
+const API_BASE = import.meta.env.VITE_API_URL;
+
 const Hero = () => {
   const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
@@ -29,7 +31,7 @@ const Hero = () => {
     }
 
     try {
-      await fetch(`http://localhost:8000/processing/${fileHash}/cancel`, {
+      await fetch(`${API_BASE}/processing/${fileHash}/cancel`, {
         method: 'POST',
       });
     } catch {
@@ -91,7 +93,7 @@ const Hero = () => {
 
     const pollProgress = async () => {
       try {
-        const response = await fetch(`http://localhost:8000/processing/${processingHash}`);
+        const response = await fetch(`${API_BASE}/processing/${processingHash}`);
         if (!response.ok) {
           throw new Error('Processing status unavailable');
         }
@@ -171,7 +173,7 @@ const Hero = () => {
       const formData = new FormData();
       formData.append('file', file);
 
-      const response = await fetch('http://localhost:8000/upload', {
+      const response = await fetch(`${API_BASE}/upload`, {
         method: 'POST',
         body: formData,
       });
@@ -223,7 +225,7 @@ const Hero = () => {
     setIsUploading(true);
     setScheduleLookupStatus(null);
     try {
-      const response = await fetch('http://localhost:8000/schedule', {
+      const response = await fetch(`${API_BASE}/schedule`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -281,7 +283,7 @@ const Hero = () => {
       formData.append('file', pendingFile);
       formData.append('hash', uploadedFileHash);
 
-      const response = await fetch('http://localhost:8000/process', {
+      const response = await fetch(`${API_BASE}/process`, {
         method: 'POST',
         body: formData,
       });
