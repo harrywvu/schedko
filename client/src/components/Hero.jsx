@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { DotLottieReact } from '@lottiefiles/dotlottie-react';
+import { startProcessingPolling } from '../utils/pollProcessing';
 import './schedko-modal.css';
 
 
@@ -10,6 +11,7 @@ const Hero = () => {
   const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [validationStatus, setValidationStatus] = useState(null);
+  const [uploadError, setUploadError] = useState('');
   const [showNewFilePrompt, setShowNewFilePrompt] = useState(false);
   const [showProcessingModal, setShowProcessingModal] = useState(false);
   const [showClassCodePrompt, setShowClassCodePrompt] = useState(false);
@@ -23,7 +25,7 @@ const Hero = () => {
   const [pendingFile, setPendingFile] = useState(null);
   const [showClassCodeDisplay, setShowClassCodeDisplay] = useState(false);
   const navigate = useNavigate();
-  const progressTimerRef = useRef(null);
+  const progressPollRef = useRef(null);
 
   const clearIncompleteServerState = async (fileHash) => {
     if (!fileHash) {
@@ -48,10 +50,8 @@ const Hero = () => {
       void clearIncompleteServerState(fileHashToClear);
     }
 
-    if (progressTimerRef.current) {
-      clearInterval(progressTimerRef.current);
-      progressTimerRef.current = null;
-    }
+    progressPollRef.current?.();
+    progressPollRef.current = null;
     setShowNewFilePrompt(false);
     setShowProcessingModal(false);
     setShowClassCodePrompt(false);
@@ -63,6 +63,7 @@ const Hero = () => {
     setPendingFile(null);
     setClassCode("");
     setValidationStatus(null);
+    setUploadError('');
   };
 
   const formatEta = (seconds) => {
@@ -89,18 +90,8 @@ const Hero = () => {
       return undefined;
     }
 
-    let cancelled = false;
-
-    const pollProgress = async () => {
-      try {
-        const response = await fetch(`${API_BASE}/processing/${processingHash}`);
-        if (!response.ok) {
-          throw new Error('Processing status unavailable');
-        }
-
-        const data = await response.json();
-        if (cancelled) return;
-
+    const stopPolling = startProcessingPolling(`${API_BASE}/processing/${processingHash}`, {
+      onProgress: (data) => {
         setProcessingInfo(data);
 
         if (data.status === 'ready') {
@@ -119,27 +110,29 @@ const Hero = () => {
             setProcessingInfo(null);
             setProcessingMode(null);
           }
-        } else if (data.status === 'failed') {
+        } else if (data.status === 'failed' || data.status === 'cancelled') {
           setShowProcessingModal(false);
           setValidationStatus(false);
+          setUploadError(data.message || 'PDF processing failed. Please try again.');
           setProcessingMode(null);
         }
-      } catch {
-        if (!cancelled) {
-          setProcessingInfo((current) => current || { message: 'Waiting for progress updates...' });
-        }
-      }
-    };
-
-    pollProgress();
-    progressTimerRef.current = setInterval(pollProgress, 2000);
+      },
+      onRetry: (delay) => setProcessingInfo((current) => ({
+        ...current,
+        message: `Connection interrupted. Retrying in ${Math.ceil(delay / 1000)} seconds...`,
+      })),
+      onUnavailable: (message) => {
+        setShowProcessingModal(false);
+        setValidationStatus(false);
+        setUploadError(message);
+        setProcessingMode(null);
+      },
+    });
+    progressPollRef.current = stopPolling;
 
     return () => {
-      cancelled = true;
-      if (progressTimerRef.current) {
-        clearInterval(progressTimerRef.current);
-        progressTimerRef.current = null;
-      }
+      stopPolling();
+      if (progressPollRef.current === stopPolling) progressPollRef.current = null;
     };
   }, [showProcessingModal, processingHash, processingMode]);
 
@@ -167,6 +160,7 @@ const Hero = () => {
     setPendingFile(file);
     setIsUploading(true);
     setValidationStatus(null);
+    setUploadError('');
     setScheduleLookupStatus(null);
     setProcessingInfo(null);
     try {
@@ -176,10 +170,11 @@ const Hero = () => {
       const response = await fetch(`${API_BASE}/upload`, {
         method: 'POST',
         body: formData,
+        signal: AbortSignal.timeout(120_000),
       });
 
       if (!response.ok) {
-        throw new Error('Upload failed');
+        throw new Error(`Upload failed (HTTP ${response.status}). Please try again.`);
       }
 
       const data = await response.json();
@@ -203,7 +198,12 @@ const Hero = () => {
         setValidationStatus(true);
         setShowClassCodePrompt(true);
       }
-    } catch {
+    } catch (error) {
+      setUploadError(error.name === 'TimeoutError'
+        ? 'The upload server took too long to respond. Please try again.'
+        : error instanceof TypeError
+          ? 'Could not reach the upload server. Please try again.'
+          : error.message || 'Upload failed. Please try again.');
       setPendingFile(null);
       setUploadedFileHash("");
       setShowNewFilePrompt(false);
@@ -496,7 +496,7 @@ const Hero = () => {
                                       <svg className="mx-auto h-12 w-12 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path>
                                       </svg>
-                                      <p className="text-red-600 mt-2">Invalid exam schedule file</p>
+                                      <p className="text-red-600 mt-2" role="alert">{uploadError || 'Invalid exam schedule file'}</p>
                                   </div>
                               ) : (
                                   <>
