@@ -1,7 +1,8 @@
 import asyncio
 import base64
 import json
-from io import BytesIO
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
 import asyncpg
 import httpx
@@ -25,19 +26,39 @@ def start_processing_job(file_hash: str, contents: bytes):
 
 async def process_pdf_job(file_hash: str, contents: bytes):
     try:
-        images = await asyncio.to_thread(convert_from_bytes, contents, dpi=200)
-        if not images:
-            raise RuntimeError("No pages were extracted from the PDF.")
+        with TemporaryDirectory(prefix="schedko-") as output_folder:
+            # Keep compressed pages on disk instead of retaining every raw
+            # page in RAM. Poppler renders sequentially with one worker.
+            render_task = asyncio.create_task(asyncio.to_thread(
+                convert_from_bytes,
+                contents,
+                dpi=200,
+                fmt="jpeg",
+                output_folder=output_folder,
+                paths_only=True,
+                thread_count=1,
+            ))
+            try:
+                page_paths = await asyncio.shield(render_task)
+            except asyncio.CancelledError:
+                # A worker thread cannot be cancelled. Let it finish before
+                # deleting the directory it is still writing into.
+                await asyncio.gather(render_task, return_exceptions=True)
+                raise
+            del contents
+            total_pages = len(page_paths)
+            if not total_pages:
+                raise RuntimeError("No pages were extracted from the PDF.")
 
-        await _set_file_state(
-            file_hash,
-            status_value="processing",
-            pages_total=len(images),
-            pages_done=0,
-            error=None,
-        )
+            await _set_file_state(
+                file_hash,
+                status_value="processing",
+                pages_total=total_pages,
+                pages_done=0,
+                error=None,
+            )
 
-        all_rows = await extract_all_pages(file_hash, images)
+            all_rows = await extract_all_pages(file_hash, page_paths)
         if not isinstance(all_rows, list):
             raise RuntimeError("Extraction failed.")
 
@@ -47,8 +68,8 @@ async def process_pdf_job(file_hash: str, contents: bytes):
         await _set_file_state(
             file_hash,
             status_value="ready",
-            pages_total=len(images),
-            pages_done=len(images),
+            pages_total=total_pages,
+            pages_done=total_pages,
             error=None,
             processed_at=True,
         )
@@ -63,11 +84,11 @@ async def process_pdf_job(file_hash: str, contents: bytes):
         )
 
 
-async def extract_all_pages(file_hash: str, images) -> list:
+async def extract_all_pages(file_hash: str, page_paths) -> list:
     all_rows = []
-    total_pages = len(images)
+    total_pages = len(page_paths)
     async with httpx.AsyncClient() as client:
-        for i, image in enumerate(images):
+        for i, page_path in enumerate(page_paths):
             print(f"Processing page {i + 1}/{total_pages}")
             await _set_file_state(
                 file_hash,
@@ -75,7 +96,10 @@ async def extract_all_pages(file_hash: str, images) -> list:
                 pages_total=total_pages,
                 pages_done=i,
             )
-            rows = await extract_page(client, image)
+            try:
+                rows = await extract_page(client, page_path)
+            finally:
+                Path(page_path).unlink(missing_ok=True)
             all_rows.extend(rows)
             await _set_file_state(
                 file_hash,
@@ -88,10 +112,10 @@ async def extract_all_pages(file_hash: str, images) -> list:
     return all_rows
 
 
-async def extract_page(client: httpx.AsyncClient, image) -> list:
-    buffer = BytesIO()
-    image.save(buffer, format="JPEG")
-    b64 = base64.b64encode(buffer.getvalue()).decode()
+async def extract_page(client: httpx.AsyncClient, page_path) -> list:
+    image_bytes = await asyncio.to_thread(Path(page_path).read_bytes)
+    b64 = base64.b64encode(image_bytes).decode()
+    del image_bytes
 
     payload = {
         "contents": [{

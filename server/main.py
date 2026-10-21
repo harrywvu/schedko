@@ -9,14 +9,6 @@ app = FastAPI()
 
 origins = [o.strip() for o in CORS_ORIGINS.split(",")]
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
 app.include_router(router)
 
 
@@ -28,3 +20,14 @@ async def startup():
 @app.on_event("shutdown")
 async def shutdown():
     await close_db()
+
+
+# Wrap the complete app so unhandled errors also receive CORS headers.
+app = CORSMiddleware(
+    app=app,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+    expose_headers=["Retry-After"],
+)

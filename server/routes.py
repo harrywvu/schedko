@@ -222,9 +222,24 @@ async def processing_status(file_hash: str):
         row = await _fetch_file_row(db, file_hash)
         if not row:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Processing job not found.")
+        if row["status"] == "processing" and not _has_active_processing_task(file_hash):
+            await db.execute(
+                """
+                UPDATE files SET status = 'failed', error = $2, updated_at = CURRENT_TIMESTAMP
+                WHERE hash = $1 AND status = 'processing'
+                """,
+                file_hash,
+                "Processing was interrupted by a server restart.",
+            )
+            row = {**dict(row), "status": "failed"}
+    message = (
+        "PDF processing failed or was interrupted. Please upload the PDF again."
+        if row["status"] == "failed"
+        else "Processing status"
+    )
     return {
         "hash": file_hash,
-        **_processing_payload("Processing status", row),
+        **_processing_payload(message, row),
     }
 
 
