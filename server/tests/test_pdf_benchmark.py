@@ -85,6 +85,34 @@ class ValidationTests(unittest.TestCase):
         with self.assertRaises(InvalidExtraction):
             validate_pages({"pages": [item]}, [1])
 
+    def test_exam_type_must_be_known_type_or_explicitly_unknown(self):
+        for value in ("Finals", "Midterms", None):
+            with self.subTest(value=value):
+                item = page()
+                item["sections"][0]["major_exam"] = value
+                result = validate_pages({"pages": [item]}, [1])
+                self.assertEqual(result[1][0]["major_exam"], value)
+
+    def test_subject_and_placeholder_strings_cannot_become_exam_type(self):
+        for value in ("TEST 101", "null", "", "Unknown"):
+            with self.subTest(value=value):
+                item = page()
+                item["sections"][0]["major_exam"] = value
+                with self.assertRaises(InvalidExtraction):
+                    validate_pages({"pages": [item]}, [1])
+
+    def test_ambiguous_cells_remain_null_without_dropping_or_shifting_row(self):
+        item = page()
+        item["sections"][0].update(exam_day=None, exam_time=None, major_exam=None)
+        item["sections"][0]["rows"][0][3] = None
+        item["sections"][0]["rows"][0][6] = None
+        actual = validate_pages({"pages": [item]}, [1])[1]
+        self.assertEqual(len(actual), 1)
+        for field in ("exam_day", "exam_time", "major_exam", "course_year", "exam_room"):
+            self.assertIsNone(actual[0][field])
+        self.assertEqual(actual[0]["instructor"], "Instructor")
+        self.assertEqual(actual[0]["exam_building"], "Building")
+
     def test_reference_compares_all_fields_per_page_and_counts_duplicates(self):
         reference = validate_pages({"pages": [page()]}, [1])
         actual = copy.deepcopy(reference)
