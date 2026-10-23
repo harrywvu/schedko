@@ -1,6 +1,8 @@
 import asyncio
 import base64
 import json
+import logging
+import time
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -9,8 +11,19 @@ import httpx
 from fastapi import HTTPException, status
 from pdf2image import convert_from_bytes
 
-from config import EXTRACTION_PROMPT, GEMINI_URL, MAX_ATTEMPTS_TO_RETRY
-from db import _delete_file_artifacts, _set_file_state, get_pool
+from config import (
+    EXTRACTION_PROMPT, GEMINI_API_KEY, GEMINI_URL, MAX_ATTEMPTS_TO_RETRY,
+    GEMINI_PDF_MODEL, GEMINI_RPM, GEMINI_INPUT_TPM, GEMINI_RPD,
+    PDF_PROCESSING_MODE, PDF_EXTRACTION_STRATEGY, PDF_PIPELINE_VERSION,
+)
+from db import (
+    _delete_file_artifacts, _set_file_state, get_pool,
+    load_extraction_pages, save_extraction_pages,
+)
+from pdf_extraction import (
+    ALL_FIELDS, ROW_FIELDS, SECTION_FIELDS, ExtractionError, InvalidExtraction,
+    PdfExtractor, RequestLimiter, pdf_page_count, retry_details, validate_pages,
+)
 from parsing import normalize_schedule_row
 from state import BACKGROUND_TASKS, PROCESSING_TASKS
 
@@ -20,11 +33,107 @@ def start_processing_job(file_hash: str, contents: bytes):
     BACKGROUND_TASKS.add(task)
     PROCESSING_TASKS[file_hash] = task
     task.add_done_callback(BACKGROUND_TASKS.discard)
-    task.add_done_callback(lambda _task, key=file_hash: PROCESSING_TASKS.pop(key, None))
+
+    def release(completed):
+        if PROCESSING_TASKS.get(file_hash) is completed:
+            PROCESSING_TASKS.pop(file_hash, None)
+
+    task.add_done_callback(release)
     return task
 
 
+_LIMITER = None
+_LIMITER_LOOP = None
+logger = logging.getLogger(__name__)
+
+
+def get_request_limiter():
+    global _LIMITER, _LIMITER_LOOP
+    loop = asyncio.get_running_loop()
+    if _LIMITER is None or _LIMITER_LOOP is not loop:
+        _LIMITER = RequestLimiter(GEMINI_RPM, GEMINI_INPUT_TPM, GEMINI_RPD, reset_daily=True)
+        _LIMITER_LOOP = loop
+    return _LIMITER
+
+
+def reusable_pages(saved, total):
+    valid = {}
+    for number, rows in saved.items():
+        if type(number) is not int or not 1 <= number <= total or not isinstance(rows, list):
+            continue
+        if any(not isinstance(row, dict) or set(row) != set(ALL_FIELDS) for row in rows):
+            continue
+        compact = {"page": number, "kind": "schedule" if rows else "no_schedule", "sections": [
+            {**{key: row[key] for key in SECTION_FIELDS},
+             "rows": [[row[key] for key in ROW_FIELDS]]} for row in rows
+        ]}
+        try:
+            valid.update(validate_pages({"pages": [compact]}, [number]))
+        except InvalidExtraction:
+            continue
+    return valid
+
+
 async def process_pdf_job(file_hash: str, contents: bytes):
+    if PDF_PROCESSING_MODE == "images":
+        return await _process_image_pdf_job(file_hash, contents)
+    started = time.monotonic()
+    try:
+        if PDF_PROCESSING_MODE != "pdf":
+            raise ExtractionError("Invalid PDF processing configuration.")
+        await _set_file_state(file_hash, status_value="processing", stage="preparing",
+                              retry_after_seconds=0, error=None)
+        total = await asyncio.to_thread(pdf_page_count, contents)
+        pages = reusable_pages(await load_extraction_pages(file_hash, PDF_PIPELINE_VERSION), total)
+        await _set_file_state(file_hash, pages_total=total, pages_done=len(pages), pages_reused=len(pages))
+        progress_lock = asyncio.Lock()
+
+        async def checkpoint(extracted):
+            # Serialize checkpoint + counter updates so progress cannot move backwards.
+            async with progress_lock:
+                await save_extraction_pages(file_hash, PDF_PIPELINE_VERSION, extracted)
+                pages.update(extracted)
+                await _set_file_state(file_hash, pages_total=total, pages_done=len(pages))
+
+        async def update_stage(stage, retry_after_seconds=0):
+            await _set_file_state(file_hash, stage=stage, retry_after_seconds=retry_after_seconds)
+
+        if len(pages) < total:
+            if not GEMINI_API_KEY:
+                raise ExtractionError("The server's Gemini API key is not configured.")
+            await update_stage("uploading")
+            async with httpx.AsyncClient(timeout=150) as client:
+                extractor = PdfExtractor(client, GEMINI_API_KEY, get_request_limiter(),
+                                         model=GEMINI_PDF_MODEL, on_status=update_stage)
+                async with extractor.uploaded_pdf(contents) as uri:
+                    pages = await extractor.extract(uri, total, PDF_EXTRACTION_STRATEGY,
+                                                    existing_pages=dict(pages), on_pages=checkpoint)
+        if set(pages) != set(range(1, total + 1)):
+            raise InvalidExtraction("Extraction did not cover every page.")
+        rows = [row for number in sorted(pages) for row in pages[number]]
+        if not rows:
+            raise InvalidExtraction("No exam schedule rows were found in this PDF.")
+        await update_stage("saving")
+        await persist_rows(file_hash, rows, total_pages=total)
+        logger.info("PDF processing completed: pages=%d rows=%d seconds=%.2f", total, len(rows), time.monotonic() - started)
+    except asyncio.CancelledError:
+        # The cancel endpoint deletes artifacts after awaiting this task.
+        # Other cancellation (e.g. graceful shutdown) must retain resumable pages.
+        try:
+            await _set_file_state(file_hash, status_value="failed", stage="failed",
+                                  retry_after_seconds=0,
+                                  error="Processing was interrupted. Re-upload the same PDF to resume saved pages.")
+        except Exception:
+            logger.warning("Could not record interrupted PDF status; saved pages were retained.")
+        raise
+    except Exception as exc:
+        message = str(exc) if isinstance(exc, ExtractionError) else "PDF processing failed. Re-upload the same PDF to resume saved pages."
+        logger.warning("PDF processing failed: %s", type(exc).__name__)
+        await _set_file_state(file_hash, status_value="failed", stage="failed",
+                              retry_after_seconds=0, error=message)
+
+
+async def _process_image_pdf_job(file_hash: str, contents: bytes):
     try:
         with TemporaryDirectory(prefix="schedko-") as output_folder:
             # Keep compressed pages on disk instead of retaining every raw
@@ -55,6 +164,7 @@ async def process_pdf_job(file_hash: str, contents: bytes):
                 status_value="processing",
                 pages_total=total_pages,
                 pages_done=0,
+                pages_reused=0,
                 error=None,
             )
 
@@ -72,15 +182,17 @@ async def process_pdf_job(file_hash: str, contents: bytes):
             pages_done=total_pages,
             error=None,
             processed_at=True,
+            stage="complete",
         )
     except asyncio.CancelledError:
         await _delete_file_artifacts(file_hash)
         raise
-    except Exception as exc:
+    except Exception:
         await _set_file_state(
             file_hash,
             status_value="failed",
-            error=str(exc),
+            error="Image extraction failed. Please retry processing the PDF.",
+            stage="failed",
         )
 
 
@@ -129,33 +241,39 @@ async def extract_page(client: httpx.AsyncClient, page_path) -> list:
     for attempt in range(MAX_ATTEMPTS_TO_RETRY):
         try:
             response = await client.post(GEMINI_URL, json=payload, timeout=60)
-            response.raise_for_status()
-            data = response.json()
-
-            if "error" in data:
-                wait = int(data["error"].get("details", [{}])[-1].get("retryDelay", "30s").replace("s", ""))
-                print(f"Rate limited, retrying in {wait}s")
-                await asyncio.sleep(wait)
+            if response.is_error:
+                wait, daily = retry_details(response)
+                if daily or response.status_code not in (408, 429, 500, 502, 503, 504):
+                    raise ExtractionError("Gemini rejected image extraction.")
+                if attempt < MAX_ATTEMPTS_TO_RETRY - 1:
+                    await asyncio.sleep(max(wait, 15))
                 continue
+            data = response.json()
 
             text = data["candidates"][0]["content"]["parts"][0]["text"]
             return json.loads(text)
 
-        except Exception as e:
-            print(f"Attempt {attempt + 1} failed: {e}")
-            await asyncio.sleep(15)
+        except ExtractionError:
+            raise
+        except (httpx.HTTPError, KeyError, IndexError, TypeError, ValueError):
+            if attempt < MAX_ATTEMPTS_TO_RETRY - 1:
+                await asyncio.sleep(15)
 
-    print("All retries failed for this page")
-    return []
+    raise ExtractionError("Image extraction failed after three attempts.")
 
 
-async def persist_rows(file_hash, all_rows):
+async def persist_rows(file_hash, all_rows, *, total_pages=None):
     if not isinstance(all_rows, list):
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Invalid rows format.")
     try:
         pool = await get_pool()
         async with pool.acquire() as db:
             async with db.transaction():
+                if total_pages is not None:
+                    file = await db.fetchrow("SELECT status FROM files WHERE hash = $1 FOR UPDATE", file_hash)
+                    if not file or file["status"] != "processing":
+                        raise asyncio.CancelledError()
+                await db.execute("DELETE FROM schedules WHERE file_hash = $1", file_hash)
                 rows_to_insert = []
                 seen_keys = set()
                 for row in all_rows:
@@ -210,5 +328,13 @@ async def persist_rows(file_hash, all_rows):
                     """,
                     rows_to_insert,
                 )
+                if total_pages is not None:
+                    await db.execute(
+                        """UPDATE files SET status = 'ready', stage = 'complete',
+                           pages_total = $2, pages_done = $2, error = NULL,
+                           retry_after_seconds = 0, processed_at = CURRENT_TIMESTAMP,
+                           updated_at = CURRENT_TIMESTAMP WHERE hash = $1""",
+                        file_hash, total_pages,
+                    )
     except asyncpg.PostgresError as exc:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"DB error: {exc}")

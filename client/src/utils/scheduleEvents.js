@@ -215,8 +215,10 @@ export function normalizeScheduleEvents(scheduleInput) {
         return [row];
       }
 
-      const examDayValue = row.exam_day ?? row.examDay ?? row.class_day ?? row.class_days ?? row.day;
-      const examTimeValue = row.exam_time ?? row.examTime ?? row.class_time;
+      const examDayValue = Object.hasOwn(row, 'exam_day')
+        ? row.exam_day : row.examDay ?? row.class_day ?? row.class_days ?? row.day;
+      const examTimeValue = Object.hasOwn(row, 'exam_time')
+        ? row.exam_time : row.examTime ?? row.class_time;
       const examDate = parseDateValue(examDayValue);
       const timeRange = parseTimeRange(examTimeValue);
 
