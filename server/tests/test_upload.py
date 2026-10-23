@@ -66,6 +66,19 @@ class UploadTests(unittest.IsolatedAsyncioTestCase):
         self.assert_cors(response)
         self.connection.execute.assert_not_awaited()
 
+    async def test_previous_prompt_cached_result_is_offered_for_reprocessing(self):
+        self.connection.fetchrow.side_effect = [
+            {"status": "ready", "schema_version": 2}, {"exists": 1},
+        ]
+        with patch.object(routes, "start_processing_job") as start:
+            response = await self.upload()
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["status"], "new")
+        self.connection.execute.assert_awaited_once()
+        self.assertEqual(self.connection.execute.await_args.args[1], config.EXTRACTION_SCHEMA_VERSION)
+        self.assertNotIn("DELETE", self.connection.execute.await_args.args[0])
+        start.assert_not_called()
+
     async def test_active_upload_keeps_processing_response(self):
         self.connection.fetchrow.side_effect = [
             {"status": "processing", "pages_total": 5, "pages_done": 2},

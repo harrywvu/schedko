@@ -167,6 +167,15 @@ class ProcessingV2Tests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.state["status_value"], "ready")
         self.persist.assert_awaited_once()
 
+    async def test_checkpoint_with_subject_in_exam_type_is_reextracted(self):
+        self.saved = validate_pages({"pages": [compact_page(i) for i in range(1, 5)]}, range(1, 5))
+        self.saved[2][0]["major_exam"] = "TEST 2"
+        await processing.process_pdf_job("hash", self.contents)
+        self.assertEqual([(a, b) for a, b, _ in self.generations], [(2, 2)])
+        self.assertEqual(self.state["pages_reused"], 3)
+        self.persist.assert_awaited_once()
+        self.assertTrue(all(row["major_exam"] == "Finals" for row in self.persist.await_args.args[1]))
+
     async def test_interruption_cleans_remote_upload_but_keeps_checkpoints_for_resume(self):
         self.failure = "cancel"
         with self.assertRaises(asyncio.CancelledError):
