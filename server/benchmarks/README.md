@@ -1,8 +1,8 @@
 # Direct-PDF extraction benchmark
 
-This is the first, gated stage of the processing redesign. It is **not imported
-by the production API**. The existing processing flow is unchanged until the
-candidate demonstrates accurate, complete extraction within three minutes.
+This CLI compares extraction strategies using the shared application engine in
+`server/pdf_extraction.py`. The API now defaults to PDF Processing 2.0; the CLI's
+accuracy/performance gate remains a benchmark result, not a deployment switch.
 
 The benchmark compares the full PDF in one generation against two overlapping
 generations, each assigned half the physical pages. Both see the same complete
@@ -115,12 +115,11 @@ validating them. Remote cleanup is recorded separately from the result latency.
 It excludes browser-to-backend transfer, Render cold starts, and database commit.
 Consequently `production_gate_passed` remains false in this standalone tool.
 
-After the candidate gate passes, integrate the selected strategy behind a
-configuration switch, add durable page checkpoints and atomic final publication,
-then test upload/cancellation/restart flows and measure the full hosted path
-through database commit. Only then change the production default or advertise
-a 1–3 minute estimate. If this experiment fails, report the measured bottleneck
-before proceeding with integration.
+The API integrates the split strategy, durable page checkpoints, and atomic
+publication. See the root README for configuration and fallback settings.
+The historical trials did not pass the accuracy gate. A fully reviewed reference
+and the full hosted path through database commit still need measurement before
+advertising a 1–3 minute runtime or claiming extraction accuracy is verified.
 
 ## Tests
 

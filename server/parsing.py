@@ -147,10 +147,10 @@ def normalize_schedule_row(row: dict) -> dict:
     return {
         "file_hash": row.get("file_hash"),
         "subject": row.get("subject"),
-        "class_time": row.get("class_time") or row.get("classTime") or row.get("exam_time"),
+        "class_time": row.get("class_time", row.get("classTime") or row.get("exam_time")),
         "class_days": row.get("class_days") or row.get("classDays") or row.get("class_day") or row.get("day"),
-        "exam_time": row.get("exam_time") or row.get("examTime") or row.get("class_time"),
-        "exam_day": row.get("exam_day") or row.get("examDay") or row.get("class_day") or row.get("day"),
+        "exam_time": row.get("exam_time", row.get("examTime") or row.get("class_time")),
+        "exam_day": row.get("exam_day", row.get("examDay") or row.get("class_day") or row.get("day")),
         "course_year": row.get("course_year"),
         "instructor": row.get("instructor"),
         "examiner": row.get("examiner"),
@@ -169,8 +169,8 @@ def rows_to_events(rows: list[dict]) -> list[dict]:
         if not isinstance(row, dict):
             continue
 
-        exam_day_value = coalesce_row_value(row, "exam_day", "examDay", "class_day", "class_days", "day")
-        exam_time_value = coalesce_row_value(row, "exam_time", "examTime", "class_time")
+        exam_day_value = row.get("exam_day", coalesce_row_value(row, "examDay", "class_day", "class_days", "day"))
+        exam_time_value = row.get("exam_time", coalesce_row_value(row, "examTime", "class_time"))
         time_range = parse_time_range(exam_time_value)
         exam_date = parse_exam_date(exam_day_value)
         days_of_week = normalize_day_code(exam_day_value)
@@ -181,6 +181,8 @@ def rows_to_events(rows: list[dict]) -> list[dict]:
         (start_hour, start_minute), (end_hour, end_minute) = time_range
         has_date = exam_date is not None
         has_recurring_days = bool(days_of_week)
+        if not has_date and not has_recurring_days:
+            continue
         title = row.get("subject") or row.get("course_year") or row.get("major_exam") or "Exam"
         events.append(
             {

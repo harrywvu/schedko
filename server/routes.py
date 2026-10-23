@@ -1,10 +1,11 @@
 import hashlib
+import asyncio
 
 from contextlib import asynccontextmanager
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile, status
 
-from config import EXTRACTION_SCHEMA_VERSION, ESTIMATED_PROCESSING_MINUTES
+from config import EXTRACTION_SCHEMA_VERSION
 from db import (
     _delete_file_artifacts,
     _fetch_file_row,
@@ -16,6 +17,7 @@ from db import (
 from parsing import normalize_lookup_value, normalize_schedule_row, rows_to_events
 from processing import start_processing_job
 from schemas import ScheduleRequest
+from state import PROCESSING_START_LOCK
 
 router = APIRouter()
 
@@ -29,6 +31,11 @@ async def _db_conn():
 
 @router.post("/upload")
 async def upload(file: UploadFile = File(...)):
+    async with PROCESSING_START_LOCK:
+        return await _upload_locked(file)
+
+
+async def _upload_locked(file):
     contents = await file.read()
     if not contents:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Empty file.")
@@ -41,9 +48,7 @@ async def upload(file: UploadFile = File(...)):
 
         if existing and existing["status"] == "processing":
             if not _has_active_processing_task(file_hash):
-                await _delete_file_artifacts(file_hash, db)
-                existing = None
-                has_rows = False
+                existing = {**dict(existing), "status": "failed"}
             else:
                 return {
                     "hash": file_hash,
@@ -90,13 +95,18 @@ async def upload(file: UploadFile = File(...)):
         "status": "new",
         "message": (
             "It appears this is a new exam schedule and can't be found on the database. "
-            f"Process file now? (Estimated time {ESTIMATED_PROCESSING_MINUTES} Minutes)"
+            "Process file now? Previously completed pages will be reused when available."
         ),
     }
 
 
 @router.post("/process")
 async def process(file: UploadFile = File(...), hash: str = Form(...)):
+    async with PROCESSING_START_LOCK:
+        return await _process_locked(file, hash)
+
+
+async def _process_locked(file, hash):
     contents = await file.read()
     if not contents:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Empty file.")
@@ -115,7 +125,7 @@ async def process(file: UploadFile = File(...), hash: str = Form(...)):
 
                 if other_active and other_active["hash"] != file_hash:
                     if not _has_active_processing_task(other_active["hash"]):
-                        await _delete_file_artifacts(other_active["hash"], db)
+                        await db.execute("UPDATE files SET status = 'failed' WHERE hash = $1", other_active["hash"])
                         other_active = None
                     else:
                         raise HTTPException(
@@ -129,8 +139,7 @@ async def process(file: UploadFile = File(...), hash: str = Form(...)):
 
                 if active_row and active_row["status"] == "processing":
                     if not _has_active_processing_task(file_hash):
-                        await _delete_file_artifacts(file_hash, db)
-                        active_row = None
+                        active_row = {**dict(active_row), "status": "failed"}
                     else:
                         raise HTTPException(
                             status_code=status.HTTP_409_CONFLICT,
@@ -161,6 +170,8 @@ async def process(file: UploadFile = File(...), hash: str = Form(...)):
                             pages_total = NULL,
                             pages_done = 0,
                             error = NULL,
+                            stage = 'preparing',
+                            retry_after_seconds = 0,
                             processing_started_at = CURRENT_TIMESTAMP,
                             processed_at = NULL,
                             updated_at = CURRENT_TIMESTAMP
@@ -170,7 +181,6 @@ async def process(file: UploadFile = File(...), hash: str = Form(...)):
                         file_hash,
                     )
 
-                await db.execute("DELETE FROM schedules WHERE file_hash = $1", file_hash)
         except Exception:
             raise
 
@@ -185,29 +195,37 @@ async def process(file: UploadFile = File(...), hash: str = Form(...)):
 
 @router.post("/processing/{file_hash}/cancel")
 async def cancel_processing(file_hash: str):
+    async with PROCESSING_START_LOCK:
+        return await _cancel_processing_locked(file_hash)
+
+
+async def _cancel_processing_locked(file_hash):
     from state import PROCESSING_TASKS
 
     task = PROCESSING_TASKS.get(file_hash)
-    if task and not task.done():
-        task.cancel()
-
     async with _db_conn() as db:
         async with db.transaction():
-            row = await _fetch_file_row(db, file_hash)
+            # Atomically arbitrate cancellation against final publication.
+            row = await db.fetchrow(
+                """UPDATE files SET status = 'cancelled', stage = 'cancelled',
+                   retry_after_seconds = 0 WHERE hash = $1 AND status <> 'ready'
+                   RETURNING hash""", file_hash,
+            )
             if not row:
+                existing = await _fetch_file_row(db, file_hash)
+                if existing:
+                    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                                        detail="Completed schedules cannot be cancelled.")
                 return {
                     "hash": file_hash,
                     "status": "not_found",
                     "deleted": False,
                 }
 
-            if row["status"] == "ready":
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Completed schedules cannot be cancelled.",
-                )
-
-            await _delete_file_artifacts(file_hash, db)
+    if task and not task.done():
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+    await _delete_file_artifacts(file_hash)
 
     return {
         "hash": file_hash,
@@ -231,11 +249,16 @@ async def processing_status(file_hash: str):
                 file_hash,
                 "Processing was interrupted by a server restart.",
             )
-            row = {**dict(row), "status": "failed"}
+            row = {**dict(row), "status": "failed", "error": "Processing was interrupted by a server restart. Re-upload the same PDF to resume saved pages."}
     message = (
-        "PDF processing failed or was interrupted. Please upload the PDF again."
+        (row.get("error") or "PDF processing failed or was interrupted. Re-upload the same PDF to resume saved pages.")
         if row["status"] == "failed"
-        else "Processing status"
+        else {
+            "preparing": "Preparing your PDF...", "uploading": "Uploading the PDF for extraction...",
+            "extracting": "Extracting exam schedule pages...",
+            "waiting": "Waiting for the API before retrying...",
+            "saving": "Saving your exam schedule...", "complete": "Exam schedule ready.",
+        }.get(row.get("stage"), "Processing status")
     )
     return {
         "hash": file_hash,
@@ -253,9 +276,9 @@ async def schedule(payload: ScheduleRequest):
     async with _db_conn() as db:
         rows = await db.fetch(
             """
-            SELECT *
-            FROM schedules
-            WHERE file_hash = $1
+            SELECT schedules.*
+            FROM schedules JOIN files ON files.hash = schedules.file_hash
+            WHERE file_hash = $1 AND files.status = 'ready'
             """,
             payload.hash,
         )

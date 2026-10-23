@@ -26,6 +26,9 @@ def sample_pdf():
 @unittest.skipUnless(shutil.which("pdftoppm") and shutil.which("pdfinfo"), "Poppler is required")
 class ProcessingTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
+        mode = patch.object(processing, "PDF_PROCESSING_MODE", "images")
+        mode.start()
+        self.addCleanup(mode.stop)
         self.state = AsyncMock()
         self.persist = AsyncMock()
         self.cleanup = AsyncMock()

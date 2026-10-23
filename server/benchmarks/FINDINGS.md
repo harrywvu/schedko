@@ -1,5 +1,10 @@
 # Initial feasibility findings — 2026-10-21
 
+Current status (2026-10-23): PDF Processing 2.0 is integrated as the default
+application pipeline. The initial findings and decision below describe the
+earlier experiment; they remain evidence of unresolved extraction accuracy,
+not a block on the now-requested integration. Hosted timing is still unverified.
+
 The requested PDF was inspected locally: 20 scanned pages, approximately
 9.3 MB, with no embedded text. It was not copied into the repository.
 

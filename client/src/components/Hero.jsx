@@ -330,7 +330,7 @@ const Hero = () => {
               Process file now?
             </p>
             <p className="text-sm text-amber-700 text-center font-semibold">
-              Estimated time: 4-5 minutes
+              Processing time depends on the PDF size and API availability.
             </p>
             <div className="schedko-modal-actions">
               <button
@@ -361,6 +361,9 @@ const Hero = () => {
             </h2>
             <p className="text-sm text-slate-600 text-center leading-6">
               {processingInfo?.message || 'Processing file...'}
+              {processingInfo?.retry_after_seconds > 0
+                ? ` Retrying in approximately ${processingInfo.retry_after_seconds} seconds.`
+                : ''}
             </p>
             <div className="w-full">
               <div className="h-3 w-full rounded-full bg-slate-200 overflow-hidden">

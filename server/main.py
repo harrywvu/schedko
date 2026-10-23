@@ -1,9 +1,12 @@
+import asyncio
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from config import CORS_ORIGINS
 from db import close_db, init_db
 from routes import router
+from state import BACKGROUND_TASKS
 
 app = FastAPI()
 
@@ -19,6 +22,10 @@ async def startup():
 
 @app.on_event("shutdown")
 async def shutdown():
+    tasks = list(BACKGROUND_TASKS)
+    for task in tasks:
+        task.cancel()
+    await asyncio.gather(*tasks, return_exceptions=True)
     await close_db()
 
 

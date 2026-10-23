@@ -1,4 +1,5 @@
 from datetime import datetime
+import json
 
 import asyncpg
 
@@ -6,6 +7,7 @@ from config import DATABASE_URL
 from state import PROCESSING_TASKS
 
 _POOL: asyncpg.Pool | None = None
+_UNSET = object()
 
 
 def _require_pool() -> asyncpg.Pool:
@@ -63,6 +65,15 @@ async def init_db():
                     FOREIGN KEY (file_hash) REFERENCES files(hash)
                 )
             """)
+            await db.execute("""
+                CREATE TABLE IF NOT EXISTS extraction_pages (
+                    file_hash TEXT NOT NULL REFERENCES files(hash) ON DELETE CASCADE,
+                    pipeline_version TEXT NOT NULL,
+                    page_number INTEGER NOT NULL CHECK (page_number > 0),
+                    rows JSONB NOT NULL,
+                    PRIMARY KEY (file_hash, pipeline_version, page_number)
+                )
+            """)
             await _ensure_column(db, "files", "schema_version", "schema_version INTEGER NOT NULL DEFAULT 1")
             await _ensure_column(db, "files", "status", "status TEXT NOT NULL DEFAULT 'uploaded'")
             await _ensure_column(db, "files", "pages_total", "pages_total INTEGER")
@@ -71,6 +82,9 @@ async def init_db():
             await _ensure_column(db, "files", "processing_started_at", "processing_started_at TIMESTAMP")
             await _ensure_column(db, "files", "processed_at", "processed_at TIMESTAMP")
             await _ensure_column(db, "files", "updated_at", "updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
+            await _ensure_column(db, "files", "stage", "stage TEXT")
+            await _ensure_column(db, "files", "retry_after_seconds", "retry_after_seconds INTEGER NOT NULL DEFAULT 0")
+            await _ensure_column(db, "files", "pages_reused", "pages_reused INTEGER NOT NULL DEFAULT 0")
             await _ensure_column(db, "schedules", "class_days", "class_days TEXT")
             await _ensure_column(db, "schedules", "exam_time", "exam_time TEXT")
             await _ensure_column(db, "schedules", "exam_day", "exam_day TEXT")
@@ -132,19 +146,22 @@ def _processing_payload(message: str, row=None) -> dict:
         "pages_done": row["pages_done"] if row else 0,
         "progress_percent": 0,
         "estimated_remaining_seconds": None,
+        "stage": row.get("stage") if row else None,
+        "retry_after_seconds": (row.get("retry_after_seconds") or 0) if row else 0,
     }
 
     if row and row["pages_total"]:
         pages_total = int(row["pages_total"])
         pages_done = int(row["pages_done"] or 0)
+        pages_done_this_run = pages_done - int(row.get("pages_reused") or 0)
         payload["progress_percent"] = round((pages_done / pages_total) * 100) if pages_total else 0
-        if row["processing_started_at"] and pages_done > 0 and pages_done < pages_total:
+        if row["processing_started_at"] and pages_done_this_run > 0 and pages_done < pages_total:
             try:
                 started_at = row["processing_started_at"]
                 if not isinstance(started_at, datetime):
                     started_at = datetime.fromisoformat(str(started_at))
                 elapsed_seconds = max((datetime.utcnow() - started_at).total_seconds(), 1)
-                per_page = elapsed_seconds / pages_done
+                per_page = elapsed_seconds / pages_done_this_run
                 payload["estimated_remaining_seconds"] = int(per_page * (pages_total - pages_done))
             except ValueError:
                 payload["estimated_remaining_seconds"] = None
@@ -158,7 +175,10 @@ async def _set_file_state(
     status_value: str | None = None,
     pages_total: int | None = None,
     pages_done: int | None = None,
-    error: str | None = None,
+    pages_reused: int | None = None,
+    error=_UNSET,
+    stage: str | None = None,
+    retry_after_seconds: int | None = None,
     processing_started_at: bool = False,
     processed_at: bool = False,
 ):
@@ -176,9 +196,18 @@ async def _set_file_state(
         if pages_done is not None:
             updates.append(f"pages_done = ${len(params) + 1}")
             params.append(pages_done)
-        if error is not None:
+        if pages_reused is not None:
+            updates.append(f"pages_reused = ${len(params) + 1}")
+            params.append(pages_reused)
+        if error is not _UNSET:
             updates.append(f"error = ${len(params) + 1}")
             params.append(error)
+        if stage is not None:
+            updates.append(f"stage = ${len(params) + 1}")
+            params.append(stage)
+        if retry_after_seconds is not None:
+            updates.append(f"retry_after_seconds = ${len(params) + 1}")
+            params.append(retry_after_seconds)
         if processing_started_at:
             updates.append("processing_started_at = CURRENT_TIMESTAMP")
         if processed_at:
@@ -202,6 +231,30 @@ async def _delete_file_artifacts(file_hash: str, db=None):
         async with conn.transaction():
             await conn.execute("DELETE FROM schedules WHERE file_hash = $1", file_hash)
             await conn.execute("DELETE FROM files WHERE hash = $1", file_hash)
+
+
+async def load_extraction_pages(file_hash, pipeline_version):
+    pool = _require_pool()
+    async with pool.acquire() as db:
+        rows = await db.fetch(
+            "SELECT page_number, rows FROM extraction_pages WHERE file_hash = $1 AND pipeline_version = $2 ORDER BY page_number",
+            file_hash, pipeline_version,
+        )
+    return {row["page_number"]: json.loads(row["rows"]) if isinstance(row["rows"], str) else row["rows"]
+            for row in rows}
+
+
+async def save_extraction_pages(file_hash, pipeline_version, pages):
+    pool = _require_pool()
+    async with pool.acquire() as db:
+        async with db.transaction():
+            await db.executemany(
+                """INSERT INTO extraction_pages (file_hash, pipeline_version, page_number, rows)
+                   VALUES ($1, $2, $3, $4::jsonb)
+                   ON CONFLICT (file_hash, pipeline_version, page_number)
+                   DO UPDATE SET rows = EXCLUDED.rows""",
+                [(file_hash, pipeline_version, number, json.dumps(rows)) for number, rows in pages.items()],
+            )
 
 
 def _has_active_processing_task(file_hash: str) -> bool:
