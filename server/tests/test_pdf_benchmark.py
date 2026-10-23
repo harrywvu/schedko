@@ -1,5 +1,6 @@
 import asyncio
 import copy
+from datetime import date
 from datetime import datetime, timedelta, timezone
 from email.utils import format_datetime
 import json
@@ -119,6 +120,18 @@ class ValidationTests(unittest.TestCase):
 
 
 class LimiterTests(unittest.IsolatedAsyncioTestCase):
+    async def test_daily_budget_resets_on_pacific_calendar_day_change(self):
+        day = date(2026, 10, 23)
+        clock = FakeClock()
+        limiter = RequestLimiter(5, 1000, 1, clock=clock, sleep=clock.sleep,
+                                 reset_daily=True, today=lambda: day)
+        await limiter.acquire(10)
+        with self.assertRaises(QuotaExhausted):
+            await limiter.acquire(10)
+        day = date(2026, 10, 24)
+        await limiter.acquire(10)
+        self.assertEqual(limiter.remaining, 0)
+
     async def test_waits_between_starts_but_not_after_a_long_response(self):
         clock = FakeClock()
         limiter = RequestLimiter(5, 1000, 3, clock=clock, sleep=clock.sleep)
@@ -265,6 +278,26 @@ class ExtractorTests(unittest.IsolatedAsyncioTestCase):
                 with self.assertRaises(ExtractionError):
                     await extractor.extract("uri", 4, "split")
             self.assertTrue(cancelled.is_set())
+
+    async def test_fragmented_saved_pages_only_extract_missing_ranges(self):
+        extracted = []
+        notified = []
+        async with httpx.AsyncClient() as client:
+            extractor, _ = self.extractor(client)
+
+            async def extract(_uri, first, last):
+                extracted.append((first, last))
+                return {number: [] for number in range(first, last + 1)}
+
+            async def checkpoint(pages):
+                notified.append(set(pages))
+
+            with patch.object(extractor, "extract_range", side_effect=extract):
+                result = await extractor.extract("uri", 6, "split", existing_pages={1: [], 3: [], 5: []},
+                                                 on_pages=checkpoint)
+            self.assertEqual(extracted, [(2, 2), (4, 4), (6, 6)])
+            self.assertEqual(notified, [{2}, {4}, {6}])
+            self.assertEqual(list(result), list(range(1, 7)))
 
     async def test_upload_is_deleted_on_success_failure_and_cancellation(self):
         for outcome in ("success", "failure", "cancel"):
