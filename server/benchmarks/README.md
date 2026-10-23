@@ -10,6 +10,16 @@ PDF to resolve merged cells and section headers. The PDF is uploaded once per
 run; the remote file is deleted afterward, including on extraction failure or
 cancellation. The default model is `gemini-3.5-flash-lite` with minimal thinking.
 
+Reading instructions are shared in `server/extraction_prompt.py`. Prompt revision
+2 explicitly defines metadata and column boundaries, limits merged-cell carry,
+and provides null fallbacks and conservative source-conflict checks. Exam type
+is constrained by both the direct-PDF response schema and local validation.
+Checkpoint and upload-cache revisions change with this update so older results
+are not treated as new-prompt extractions. Prompt instructions and valid schema
+output do not establish accuracy; compare each trial with an independent source
+review. The standalone probe always performs a fresh extraction without API/DB
+checkpoints.
+
 ## Setup
 
 Use a Python 3.11+ virtual environment (no PostgreSQL or running API required):
@@ -59,6 +69,58 @@ Reference comparison is per page, preserves duplicate multiplicity, and checks
 all 13 fields. Only Unicode compatibility, letter case, and whitespace are
 normalized. Missing values and conflicting dates/rooms are not silently fixed.
 Agreement between two model runs alone is not a verified reference.
+
+## Offline source-image accuracy audit
+
+`verify_accuracy.py` checks a saved extraction against independently reviewed
+cells without additional API requests. Use it to record partial review honestly:
+matching counts or a few matching fields cannot pass its all-correct gate.
+
+```bash
+/tmp/schedko-benchmark-venv/bin/python server/benchmarks/verify_accuracy.py \
+  --pdf /absolute/path/schedule.pdf \
+  --extraction /tmp/schedko-comparison/split-1-review.json \
+  --review /absolute/path/private-source-review.json \
+  --output /tmp/schedko-accuracy-report.json
+```
+
+The separate review file has this shape (synthetic example):
+
+```json
+{
+  "pdf_sha256": "SHA256_OF_REVIEWED_PDF",
+  "reviewed_against_page_images": true,
+  "row_counts": {"1": 0, "2": 1},
+  "checks": [
+    {"page": 2, "row": 1, "expected": {"subject": "TEST 101", "exam_building": "CAB"}}
+  ],
+  "source_corrections": []
+}
+```
+
+Page and row coordinates are 1-based and follow source order. Transcribe expected
+values from rendered page images, not from the model response. Record explicitly
+authorized corrections to source errors in `source_corrections` and use the
+corrected value in the affected checks. The metadata list documents a correction;
+it does not apply an override to the extraction or to the application database.
+
+Both inputs must match the PDF hash. The report tracks reviewed and unreviewed
+fields, per-field failures, page coverage, and row counts. A pass requires reviewed
+counts for **every page**, all 13 fields of every expected row reviewed, no
+missing/extra rows or pages, and no cell mismatches. Duplicate checks cannot
+inflate coverage. The example above is deliberately partial and cannot pass.
+
+Formatting comparison accepts case/Unicode whitespace, spacing within subject,
+course, room and building identifiers, equivalent parseable dates/times,
+`AY` prefixes, and listed exam/semester aliases. It preserves identifier digits
+and punctuation and distinguishes missing cells from the literal string `"null"`.
+This formatting comparison is separate from the stricter full-reference benchmark
+comparison above. Reordered rows fail the source-order audit and need review.
+
+Detailed reports contain document contents and are written with mode 0600; keep
+them and the source review outside Git. Standard output contains aggregate counts.
+Exit 0 means a complete match, 2 means a mismatch or incomplete review, and 1 means
+invalid input. See [the latest accuracy findings](ACCURACY_RESULTS.md).
 
 ## Full comparison
 
@@ -129,6 +191,8 @@ advertising a 1–3 minute runtime or claiming extraction accuracy is verified.
 ```
 
 Tests use synthetic rows and mocked HTTP transport and consume no API quota.
+Run `python -m unittest discover -s server/tests -v` to include the offline
+accuracy-gate regressions as well as the application processing tests.
 
 Protocol references: [Files API](https://ai.google.dev/api/files),
 [generateContent](https://ai.google.dev/api/generate-content),

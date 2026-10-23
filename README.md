@@ -25,7 +25,18 @@ Validated pages are checkpointed in PostgreSQL. Re-upload the same PDF after a
 failed job or server restart to resume unfinished pages. Explicit cancellation
 removes the job and its checkpoints. Schedule rows and the final ready status
 are committed in one transaction, so partial jobs are not returned as results.
-Existing completed schedules remain cached.
+Completed schedules from the current extraction revision remain cached. After
+this prompt update, re-uploading a PDF processed with the previous revision
+offers fresh processing instead of returning its old cached extraction.
+
+The shared prompt in `server/extraction_prompt.py` defines each field, separates
+exam headers from class columns, and checks merge spans and true blanks. Unknown
+cells remain null. A conflicting date is resolved only when one replacement has
+at least two independent supporting cues in the document; unresolved dates stay
+null. The direct-PDF response schema and validator restrict exam type to `Finals`,
+`Midterms`, or null. These rules also guide the legacy image prompt, which only
+has the current page as context. Versioned checkpoints prevent old prompt results
+from being reused in new extraction attempts.
 
 Use Python 3.11+, install `server/requirements.txt`, and restart the API after updating. Startup
 creates the checkpoint table and adds progress columns to the existing files
