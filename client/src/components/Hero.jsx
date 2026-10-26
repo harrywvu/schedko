@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { DotLottieReact } from '@lottiefiles/dotlottie-react';
 import { startProcessingPolling } from '../utils/pollProcessing';
+import { uploadPdf } from '../utils/uploadPdf';
 import './schedko-modal.css';
 
 
@@ -97,7 +98,6 @@ const Hero = () => {
         if (data.status === 'ready') {
           setShowProcessingModal(false);
           setValidationStatus(true);
-          setPendingFile(null);
 
           if (processingMode === 'busy') {
             setProcessingInfo(null);
@@ -105,6 +105,7 @@ const Hero = () => {
             setProcessingMode(null);
             setShowNewFilePrompt(true);
           } else {
+            setPendingFile(null);
             setShowClassCodePrompt(true);
             setProcessingHash("");
             setProcessingInfo(null);
@@ -164,20 +165,7 @@ const Hero = () => {
     setScheduleLookupStatus(null);
     setProcessingInfo(null);
     try {
-      const formData = new FormData();
-      formData.append('file', file);
-
-      const response = await fetch(`${API_BASE}/upload`, {
-        method: 'POST',
-        body: formData,
-        signal: AbortSignal.timeout(120_000),
-      });
-
-      if (!response.ok) {
-        throw new Error(`Upload failed (HTTP ${response.status}). Please try again.`);
-      }
-
-      const data = await response.json();
+      const data = await uploadPdf(`${API_BASE}/upload`, file);
       if (!data?.hash) {
         throw new Error('Missing hash');
       }
@@ -190,7 +178,7 @@ const Hero = () => {
       } else if (data.status === 'processing') {
         setValidationStatus(true);
         setProcessingInfo(data);
-        startProcessingPoll(data.hash, 'busy');
+        startProcessingPoll(data.hash, 'own');
       } else if (data.status === 'new') {
         setValidationStatus(true);
         setShowNewFilePrompt(true);
@@ -234,6 +222,7 @@ const Hero = () => {
           hash: uploadedFileHash,
           classCode: classCode.trim(),
         }),
+        signal: AbortSignal.timeout(30_000),
       });
 
       if (!response.ok) {
@@ -265,7 +254,8 @@ const Hero = () => {
   const handleProcessNewFile = async () => {
     if (!pendingFile || !uploadedFileHash) return;
 
-    setProcessingHash(uploadedFileHash);
+    // Poll only after /process has accepted the job, not while it is still uploaded.
+    setProcessingHash("");
     setProcessingMode('own');
     setShowNewFilePrompt(false);
     setShowProcessingModal(true);
@@ -286,6 +276,7 @@ const Hero = () => {
       const response = await fetch(`${API_BASE}/process`, {
         method: 'POST',
         body: formData,
+        signal: AbortSignal.timeout(120_000),
       });
 
       const data = await response.json();
@@ -303,16 +294,19 @@ const Hero = () => {
           });
           if (detail.activeHash) {
             startProcessingPoll(detail.activeHash, 'busy');
+            return;
           }
-          return;
         }
 
         throw new Error(data?.detail || data?.message || 'Processing failed');
       }
 
       startProcessingPoll(data.hash || uploadedFileHash, 'own');
-    } catch {
+    } catch (error) {
       setValidationStatus(false);
+      setUploadError(error.name === 'TimeoutError'
+        ? 'The processing server took too long to respond. Re-upload the PDF to check its progress.'
+        : error.message || 'Processing failed. Please try again.');
       setShowProcessingModal(false);
       setProcessingMode(null);
     }
