@@ -67,10 +67,6 @@ const Results = () => {
               period.
             </p>
           </div>
-          <div className="results-summary-card">
-            <span className="summary-label">Total exams</span>
-            <span className="summary-value">{events.length}</span>
-          </div>
         </div>
 
         <section className="results-table-card">

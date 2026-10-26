@@ -6,8 +6,8 @@ const pillars = [
     text: 'Turn dense university exam PDFs into a readable schedule with less manual searching.',
   },
   {
-    title: 'Focused student workflow',
-    text: 'Enter your program details once and jump straight to the exams that matter to you.',
+    title: 'Find your class',
+    text: 'Enter your class code to find the matching entries in the uploaded schedule.',
   },
   {
     title: 'Clear calendar output',
@@ -20,10 +20,10 @@ const About = () => (
     <section className="page-hero">
       <div className="page-hero-copy">
         <p className="page-eyebrow">About SchedKo</p>
-        <h1 className="page-title">A cleaner way to read exam schedules.</h1>
+        <h1 className="page-title">Find your exams in the university schedule.</h1>
         <p className="page-lead">
-          SchedKo is built to take a crowded exam PDF and turn it into a timetable that is easier to
-          understand, easier to trust, and easier to act on during exam season.
+          SchedKo reads your university’s exam PDF and filters it by class code.
+          You get a timetable with your subjects, exam times, rooms, and examiners.
         </p>
       </div>
 

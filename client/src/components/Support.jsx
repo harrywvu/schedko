@@ -24,10 +24,10 @@ const Support = () => (
     <section className="page-hero">
       <div className="page-hero-copy">
         <p className="page-eyebrow">Support</p>
-        <h1 className="page-title">Help when the exam file does not behave.</h1>
+        <h1 className="page-title">Help with your schedule.</h1>
         <p className="page-lead">
-          The app is designed for messy real-world PDFs, but scans vary. These notes cover the most
-          common issues and the fastest way to fix them.
+          Find help with uploads, class codes, and missing exams.
+          Start with the checks below if your schedule doesn’t look right.
         </p>
       </div>
 

@@ -4,20 +4,20 @@
   --results-border: rgba(15, 23, 42, 0.08);
   --results-text: var(--ink);
   --results-muted: var(--muted);
-  --results-accent: #0f5132;
+  --results-accent: var(--schedko-green);
   --results-gold: #f4b400;
-  --results-radius: 10px;
+  --results-radius: 8px;
   --results-shadow: none;
 }
 
 .results-page {
   min-height: 65vh;
   background: var(--results-bg);
-  padding: 2rem 1rem 3rem;
+  padding: 40px;
 }
 
 .results-container {
-  max-width: 1180px;
+  max-width: 1080px;
   margin: 0 auto;
   display: flex;
   flex-direction: column;
@@ -54,14 +54,13 @@
   margin: 0 0 0.35rem;
   color: var(--results-accent);
   font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.12em;
+
   font-size: 0.8rem;
 }
 
 .results-title {
   margin: 0;
-  font-size: clamp(2rem, 4vw, 3rem);
+  font-size: clamp(28px, 3.2vw, 36px);
   color: var(--results-text);
   line-height: 1.05;
 }
@@ -70,28 +69,6 @@
   margin: 0.75rem 0 0;
   color: var(--results-muted);
   max-width: 65ch;
-}
-
-.results-summary-card {
-  min-width: 140px;
-  padding: 1rem 1.1rem;
-  border-radius: 1rem;
-  background: #eeefe6;
-  color: var(--results-text);
-  display: grid;
-  gap: 0.25rem;
-}
-
-.summary-label {
-  font-size: 0.8rem;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--results-muted);
-}
-
-.summary-value {
-  font-size: 2rem;
-  font-weight: 800;
 }
 
 .results-table-card {
@@ -130,11 +107,10 @@
 }
 
 .results-table th {
-  font-size: 0.78rem;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--results-muted);
-  background: rgba(15, 81, 50, 0.04);
+  font-size: 13px;
+  font-weight: 600;
+  color: #fff;
+  background: var(--schedko-green);
 }
 
 .results-table tbody tr:hover {
@@ -176,7 +152,7 @@
 .results-btn:hover,
 .results-btn:focus {
   background: #0a3f27;
-  transform: translateY(-1px);
+
 }
 
 .results-empty .results-btn {
@@ -186,11 +162,6 @@
 @media (max-width: 860px) {
   .results-header {
     flex-direction: column;
-  }
-
-  .results-summary-card {
-    width: 100%;
-    min-width: 0;
   }
 
   .results-table-card,
@@ -209,6 +180,6 @@
 
 .results-container > *, .results-header > * { min-width: 0; }
 .results-header { background: transparent; border: 0; padding: 20px 0 28px; }
-.results-title { font-weight: 500; }
+.results-title { font-weight: 650; letter-spacing: -1px; }
 .table-scroll:focus-visible { outline-offset: 2px; }
 @media (max-width: 600px) { .results-page { padding: 32px 20px; } }

@@ -10,9 +10,9 @@ export default function Navbar() {
       <nav className="site-nav layout-width" aria-label="Main navigation">
         <Link className="brand" to="/" onClick={() => setIsOpen(false)} aria-label="SchedKo home">
           <img src="/logo_symbol_only.png" alt="" width="42" height="42" />
-          <span>SchedKo<span className="brand-dot">.</span></span>
+          <span>SchedKo</span>
         </Link>
-        <span className="brand-caption">A little clarity for exam week.</span>
+        <span className="brand-caption">Exam schedule planner</span>
         <button className="menu-toggle" aria-expanded={isOpen} aria-controls="nav-links" onClick={() => setIsOpen(!isOpen)}>
           {isOpen ? 'Close' : 'Menu'} <span aria-hidden="true">{isOpen ? '×' : '☰'}</span>
         </button>
