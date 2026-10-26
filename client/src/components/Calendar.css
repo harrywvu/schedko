@@ -1,15 +1,6 @@
 /* Calendar.css - Responsive, SchedKo green/gold theme, Lora/Jost fonts */
 
-:root {
-  --schedko-green: #15803d;
-  --schedko-green-dark: #166534;
-  --schedko-gold: #facc15;
-  --schedko-bg: #f8fafc;
-  --schedko-radius: 1rem;
-  --schedko-shadow: 0 2px 12px 0 rgba(21,128,61,0.08);
-  --font-lora: 'Lora', serif;
-  --font-jost: 'Jost', sans-serif;
-}
+
 
 .calendar-root {
   font-family: var(--font-jost);
@@ -22,7 +13,7 @@
 }
 
 .calendar-range-note {
-  background: linear-gradient(135deg, #effdf5 0%, #fdf8e7 100%);
+  background: #eeefe6;
   border: 1px solid rgba(21, 128, 61, 0.15);
   color: #14532d;
   font-weight: 600;
@@ -53,9 +44,9 @@
 }
 
 .calendar-wrapper {
-  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+  background: #ffffff;
   border-radius: 1rem;
-  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+  box-shadow: none;
   padding: 0.5rem;
   overflow-x: auto;
 }
@@ -110,7 +101,7 @@
   border: 1px solid var(--event-border, rgba(15, 23, 42, 0.12)) !important;
   font-family: var(--font-jost);
   border-radius: 0.75rem;
-  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.12);
+  box-shadow: none;
   overflow: hidden;
 }
 .fc .fc-event *,
@@ -181,3 +172,5 @@
     padding: 0.1rem;
   }
 }
+
+.calendar-wrapper .fc { min-width: 680px; }

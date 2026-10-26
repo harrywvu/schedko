@@ -66,14 +66,14 @@ function formatDayLabel(value) {
 
 function getCellStyle(seed) {
   const palette = [
-    '#60a5fa',
-    '#4ade80',
-    '#f59e0b',
-    '#f472b6',
-    '#a78bfa',
-    '#22d3ee',
-    '#fb7185',
-    '#f97316',
+    '#dce8f1',
+    '#dfead9',
+    '#f0e4c6',
+    '#f0dfe5',
+    '#e5e0f1',
+    '#d9eded',
+    '#f0ded8',
+    '#f1e1ce',
   ];
 
   const borderPalette = [

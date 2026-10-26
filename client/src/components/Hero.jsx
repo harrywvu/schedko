@@ -1,8 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { DotLottieReact } from '@lottiefiles/dotlottie-react';
 import { startProcessingPolling } from '../utils/pollProcessing';
+import { uploadPdf } from '../utils/uploadPdf';
 import './schedko-modal.css';
+import Modal from './Modal';
 
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
@@ -97,7 +98,6 @@ const Hero = () => {
         if (data.status === 'ready') {
           setShowProcessingModal(false);
           setValidationStatus(true);
-          setPendingFile(null);
 
           if (processingMode === 'busy') {
             setProcessingInfo(null);
@@ -105,6 +105,7 @@ const Hero = () => {
             setProcessingMode(null);
             setShowNewFilePrompt(true);
           } else {
+            setPendingFile(null);
             setShowClassCodePrompt(true);
             setProcessingHash("");
             setProcessingInfo(null);
@@ -164,20 +165,7 @@ const Hero = () => {
     setScheduleLookupStatus(null);
     setProcessingInfo(null);
     try {
-      const formData = new FormData();
-      formData.append('file', file);
-
-      const response = await fetch(`${API_BASE}/upload`, {
-        method: 'POST',
-        body: formData,
-        signal: AbortSignal.timeout(120_000),
-      });
-
-      if (!response.ok) {
-        throw new Error(`Upload failed (HTTP ${response.status}). Please try again.`);
-      }
-
-      const data = await response.json();
+      const data = await uploadPdf(`${API_BASE}/upload`, file);
       if (!data?.hash) {
         throw new Error('Missing hash');
       }
@@ -190,7 +178,7 @@ const Hero = () => {
       } else if (data.status === 'processing') {
         setValidationStatus(true);
         setProcessingInfo(data);
-        startProcessingPoll(data.hash, 'busy');
+        startProcessingPoll(data.hash, 'own');
       } else if (data.status === 'new') {
         setValidationStatus(true);
         setShowNewFilePrompt(true);
@@ -234,6 +222,7 @@ const Hero = () => {
           hash: uploadedFileHash,
           classCode: classCode.trim(),
         }),
+        signal: AbortSignal.timeout(30_000),
       });
 
       if (!response.ok) {
@@ -265,7 +254,8 @@ const Hero = () => {
   const handleProcessNewFile = async () => {
     if (!pendingFile || !uploadedFileHash) return;
 
-    setProcessingHash(uploadedFileHash);
+    // Poll only after /process has accepted the job, not while it is still uploaded.
+    setProcessingHash("");
     setProcessingMode('own');
     setShowNewFilePrompt(false);
     setShowProcessingModal(true);
@@ -286,6 +276,7 @@ const Hero = () => {
       const response = await fetch(`${API_BASE}/process`, {
         method: 'POST',
         body: formData,
+        signal: AbortSignal.timeout(120_000),
       });
 
       const data = await response.json();
@@ -303,28 +294,30 @@ const Hero = () => {
           });
           if (detail.activeHash) {
             startProcessingPoll(detail.activeHash, 'busy');
+            return;
           }
-          return;
         }
 
         throw new Error(data?.detail || data?.message || 'Processing failed');
       }
 
       startProcessingPoll(data.hash || uploadedFileHash, 'own');
-    } catch {
+    } catch (error) {
       setValidationStatus(false);
+      setUploadError(error.name === 'TimeoutError'
+        ? 'The processing server took too long to respond. Re-upload the PDF to check its progress.'
+        : error.message || 'Processing failed. Please try again.');
       setShowProcessingModal(false);
       setProcessingMode(null);
     }
   };
 
   return (
-    <div className="container mx-auto px-4 py-8 sm:py-12 md:py-16 lg:py-20">
+    <section className="hero-section layout-width" aria-labelledby="hero-title">
       {/* New File Prompt Modal */}
       {showNewFilePrompt && (
-        <div className="schedko-modal-overlay">
-          <div className="schedko-modal">
-            <h2 className="schedko-modal-title">New Exam Schedule Detected</h2>
+        <Modal labelledBy="new-file-title" onCancel={() => resetUploadFlow(true)}>
+            <h2 id="new-file-title" className="schedko-modal-title">New Exam Schedule Detected</h2>
             <p className="text-sm text-slate-600 text-center leading-6">
               It appears this is a new exam schedule and can&apos;t be found in the database.
               Process file now?
@@ -346,15 +339,13 @@ const Hero = () => {
                 Process File
               </button>
             </div>
-          </div>
-        </div>
+        </Modal>
       )}
 
       {/* Processing Modal */}
       {showProcessingModal && (
-        <div className="schedko-modal-overlay">
-          <div className="schedko-modal">
-            <h2 className="schedko-modal-title">
+        <Modal labelledBy="processing-title" onCancel={() => resetUploadFlow(processingMode !== 'busy' || showNewFilePrompt)}>
+            <h2 id="processing-title" className="schedko-modal-title">
               {processingInfo?.message?.includes('already being processed')
                 ? 'This PDF is already being processed'
                 : 'Processing Exam Schedule'}
@@ -391,19 +382,18 @@ const Hero = () => {
                 Cancel
               </button>
             </div>
-          </div>
-        </div>
+        </Modal>
       )}
 
       {/* Class Code Prompt Modal */}
       {showClassCodePrompt && (
-        <div className="schedko-modal-overlay">
-          <div className="schedko-modal">
-            <h2 className="schedko-modal-title">Enter Your Class Code</h2>
+        <Modal labelledBy="class-code-title" onCancel={() => resetUploadFlow()}>
+            <h2 id="class-code-title" className="schedko-modal-title">Enter Your Class Code</h2>
             <input
               type="text"
               className="schedko-modal-input"
-              placeholder="e.g. MATH101"
+              aria-label="Class code"
+              placeholder="e.g. BSIT2A"
               value={classCode}
               onChange={e => setClassCode(e.target.value)}
               autoFocus
@@ -411,21 +401,20 @@ const Hero = () => {
             <div className="schedko-modal-actions">
               <button
                 className="schedko-modal-btn-cancel"
-                onClick={resetUploadFlow}
+                onClick={() => resetUploadFlow()}
               >Cancel</button>
               <button
                 className="schedko-modal-btn-submit"
                 onClick={handleFileAndClassCodeSubmission}
-                disabled={!classCode.trim()}
-              >Submit</button>
+                disabled={!classCode.trim() || isUploading}
+              >{isUploading ? 'Finding your exams…' : 'View my schedule'}</button>
             </div>
             {scheduleLookupStatus === false && (
               <p className="mt-4 text-sm text-red-600 text-center">
                 No matching schedule was found for that class code.
               </p>
             )}
-          </div>
-        </div>
+        </Modal>
       )}
       {/* Show submitted class code for testing */}
       {showClassCodeDisplay && (
@@ -434,103 +423,58 @@ const Hero = () => {
         </div>
       )}
 
-      <div className="flex flex-col lg:flex-row gap-8 lg:gap-12 items-center">
-          {/* Left Side Container - Hero Text */}
-          <div className="flex-1 flex flex-col gap-6 md:gap-8 justify-center max-w-2xl lg:max-w-none mx-auto">                <div className="text-center">                    <h1 className="font-lora text-3xl sm:text-4xl md:text-5xl lg:text-6xl xl:text-7xl font-bold text-gray-900 mb-4 md:mb-6 drop-shadow-sm">
-                          Personalized Exam <span className="bg-gradient-to-r from-amber-500 via-yellow-500 to-amber-400 bg-clip-text text-transparent drop-shadow">Schedules,</span> Made <span className="bg-gradient-to-r from-green-600 via-green-500 to-emerald-500 bg-clip-text text-transparent drop-shadow">Easy</span>
-                      </h1>
-                      <p className="font-jost text-base sm:text-lg md:text-xl lg:text-2xl xl:text-3xl text-gray-600 max-w-xl mx-auto drop-shadow-sm">
-                          Upload your university exam file, select your program and section, and instantly view a clean, customized calendar just for you.
-                      </p>
-                  </div>
-              </div>
-
-              {/* Right Side Container - Animation and Upload */}
-              <div className="flex-1 flex flex-col items-center justify-center gap-6 md:gap-8 max-w-2xl lg:max-w-none mx-auto">                {/* Animation */}
-                  <div className="w-full max-w-[280px] sm:max-w-[400px] md:max-w-[480px] lg:max-w-[520px] xl:max-w-[600px] mx-auto">
-                      <DotLottieReact
-                          className="w-full h-auto"
-                          src="hero-lottie.json"
-                          loop
-                          autoplay
-                      />
-                  </div>
-
-                  {/* Upload Area */}
-                  <div className="w-full max-w-sm lg:max-w-md mx-auto">
-                      <div
-                          className={`relative border-2 border-dashed rounded-xl p-6 sm:p-8 md:p-10 lg:p-12 text-center cursor-pointer transition-all duration-300 ease-in-out
-                                  ${isDragging 
-                                      ? 'border-transparent bg-blue-50 before:absolute before:inset-0 before:rounded-xl before:border-2 before:border-dashed before:border-blue-500 before:animate-pulse' 
-                                      : 'border-gray-300 hover:border-gray-400 hover:shadow-lg'
-                                  }`}
-                          onDragOver={handleDragOver}
-                          onDragLeave={handleDragLeave}
-                          onDrop={handleDrop}
-                          onClick={() => document.getElementById('fileInput').click()}
-                      >
-                          <input
-                              type="file"
-                              id="fileInput"
-                              className="hidden"
-                              accept=".pdf"
-                              onChange={(e) => {
-                                  const file = e.target.files[0];
-                                  handleFileSelect(file);
-                              }}
-                          />
-
-                          {/* File Upload Content */}
-                          <div className="mb-4">
-                              {isUploading ? (
-                                  <div className="text-center">
-                                      <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
-                                      <p className="text-gray-600">Uploading and validating...</p>
-                                  </div>
-                              ) : validationStatus === true ? (
-                                  <div className="text-center">
-                                      <svg className="mx-auto h-12 w-12 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path>
-                                      </svg>
-                                      <p className="text-green-600 mt-2">Valid exam schedule file!</p>
-                                  </div>
-                              ) : validationStatus === false ? (
-                                  <div className="text-center">
-                                      <svg className="mx-auto h-12 w-12 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path>
-                                      </svg>
-                                      <p className="text-red-600 mt-2" role="alert">{uploadError || 'Invalid exam schedule file'}</p>
-                                  </div>
-                              ) : (
-                                  <>
-                                      <svg
-                                          className="mx-auto h-12 w-12 text-gray-400 group-hover:text-blue-500 transition-colors duration-300"
-                                          stroke="currentColor"
-                                          fill="none"
-                                          viewBox="0 0 48 48"
-                                      >
-                                          <path
-                                              d="M28 8H12a4 4 0 00-4 4v20m0 0v4a4 4 0 004 4h20a4 4 0 004-4V28m0 0V12a4 4 0 00-4-4h-4m4 20H8m24 0l-8-8m0 0l-8 8m8-8v20"
-                                              strokeWidth="2"
-                                              strokeLinecap="round"
-                                              strokeLinejoin="round"
-                                          />
-                                      </svg>
-                                      <p className="mt-4 text-sm text-gray-600">
-                                          Drag and drop your PDF here, or click to select
-                                      </p>
-                                      <p className="mt-1 text-xs text-gray-500">PDF up to 30MB</p>
-                                  </>
-                              )}
-                          </div>
-                      </div>
-                  </div>
-              </div>
+      <div className="hero-grid">
+        <div className="hero-copy">
+          <p className="eyebrow"><span className="eyebrow-line" /> Your exam week, simplified</p>
+          <h1 id="hero-title">A full schedule.<br />A <em>clearer</em> head.</h1>
+          <p className="hero-description">Turn that crowded exam PDF into a personal timetable. Just your classes, all in one place.</p>
+          <a className="text-link" href="#how-it-works">See how it works <span aria-hidden="true">↗</span></a>
+          <div className="schedule-preview" aria-label="Illustrative schedule preview">
+            <div className="preview-heading"><span>YOUR WEEK, AT A GLANCE</span><span className="preview-label">Sample</span></div>
+            <div className="preview-days" aria-hidden="true">
+              <div><span>MON</span><div className="preview-exam"><b>Mathematics</b><span>8:00 – 9:30 AM</span></div></div>
+              <div><span>TUE</span><div className="preview-exam gold"><b>Programming</b><span>10:00 – 11:30 AM</span></div></div>
+              <div><span>WED</span><div className="preview-free">Room to breathe.</div></div>
+            </div>
+            <p className="preview-caption">The big picture. Without the extra pages.</p>
           </div>
+        </div>
+        <div className="upload-panel" id="upload">
+          <div className="upload-panel-top"><span className="eyebrow">Let’s get you organized</span><span className="upload-step">01 / 03</span></div>
+          <h2>Your schedule starts here.</h2>
+          <p>Upload your university’s exam schedule PDF.</p>
+          <div
+            className={`upload-dropzone ${isDragging ? 'is-dragging' : ''}`}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={(event) => { if (isUploading) event.preventDefault(); else handleDrop(event); }}
+            aria-busy={isUploading}
+          >
+            <svg className="upload-icon" width="52" height="58" viewBox="0 0 52 58" fill="none" aria-hidden="true">
+              <path d="M10 2h22l12 12v40H10z" fill="currentColor" fillOpacity=".06" stroke="currentColor" strokeWidth="1.5" />
+              <path d="M32 2v12h12M20 35l7-7 7 7M27 28v16" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+              <path d="M5 10H2v46h33" stroke="currentColor" strokeOpacity=".3" strokeWidth="1.5" />
+            </svg>
+            <div className="upload-status" aria-live="polite">
+              <h3>{isUploading ? 'Checking your PDF…' : validationStatus === true ? 'Your PDF is ready.' : 'Drop your PDF here'}</h3>
+              <p>{isUploading ? 'Hang tight while we validate your file.' : 'or choose a file from your device'}</p>
+            </div>
+            <label className={`upload-button ${isUploading ? 'is-disabled' : ''}`}>
+              <input type="file" accept=".pdf,application/pdf" disabled={isUploading} aria-label="Choose exam schedule PDF" onChange={(event) => {
+                const file = event.target.files[0];
+                handleFileSelect(file);
+                event.target.value = '';
+              }} />
+              {isUploading ? 'Uploading…' : 'Choose PDF'} <span aria-hidden="true">↑</span>
+            </label>
+            <span className="upload-file-note">PDF format · Up to 30 MB</span>
+          </div>
+          {validationStatus === false && <p className="upload-error" role="alert">{uploadError || 'Invalid exam schedule file. Please try again.'}</p>}
+          <div className="upload-next"><span aria-hidden="true">↳</span><p>Next, enter your class code.<br /><strong>We’ll find the exams that matter to you.</strong></p></div>
+          <div className="upload-panel-bottom"><span>No account needed</span><span>Made for students</span></div>
+        </div>
       </div>
-
-
-    
+    </section>
   )
 }
 

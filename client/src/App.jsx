@@ -14,6 +14,7 @@ function App() {
     <Router>
       <Navbar />
       
+      <main id="main-content" tabIndex={-1}>
       <Routes>
         <Route path="/" element={
           <>
@@ -26,6 +27,7 @@ function App() {
         <Route path="/about" element={<About />} />
         <Route path="/support" element={<Support />} />
       </Routes>
+      </main>
 
       <Footer />
     </Router>
