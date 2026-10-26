@@ -77,7 +77,7 @@ const Results = () => {
           <div className="section-heading">
             <h2>Schedule overview</h2>
           </div>
-          <div className="table-scroll">
+          <div className="table-scroll" role="region" aria-label="Exam schedule table, scroll horizontally for more details" tabIndex={0}>
             <table className="results-table">
               <thead>
                 <tr>

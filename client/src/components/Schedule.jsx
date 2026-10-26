@@ -1,20 +1,16 @@
-import React from 'react';
+import { Link } from 'react-router-dom'
 
-const Schedule = () => {
+export default function Schedule() {
   return (
-    <div className="min-h-screen bg-gray-50 py-8">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="bg-white rounded-lg shadow p-6">
-          <h1 className="font-lora text-3xl font-bold text-gray-900 mb-6">Your Exam Schedule</h1>
-          
-          {/* Schedule content will go here */}
-          <div className="space-y-4">
-            <p className="font-jost text-gray-600">Your schedule is being processed...</p>
-          </div>
+    <div className="page-shell">
+      <section className="page-hero">
+        <div className="page-hero-copy">
+          <p className="page-eyebrow">Your exam schedule</p>
+          <h1 className="page-title">Let’s start with your PDF.</h1>
+          <p className="page-lead">Upload your university’s exam schedule, then enter your class code to build your personal timetable.</p>
+          <Link className="text-link" to="/">Upload a schedule <span aria-hidden="true">↗</span></Link>
         </div>
-      </div>
+      </section>
     </div>
-  );
-};
-
-export default Schedule;
+  )
+}

@@ -3,11 +3,11 @@ import React from 'react';
 const faqs = [
   {
     question: 'My upload fails or stalls.',
-    answer: 'Use a PDF under 10 MB and make sure the scan is readable. If the file came from a phone photo, a cleaner export usually works better.',
+    answer: 'Use a PDF up to 30 MB and make sure the scan is readable. If the file came from a phone photo, a cleaner export usually works better.',
   },
   {
     question: 'My section or class code is not detected.',
-    answer: 'Try the exact spelling or a tighter version without spaces and punctuation. For example, use `bsit2a` instead of `BSIT 2-A`.',
+    answer: 'Try the exact spelling or a tighter version without spaces and punctuation. For example, use bsit2a instead of BSIT 2-A.',
   },
   {
     question: 'The timetable looks incomplete.',

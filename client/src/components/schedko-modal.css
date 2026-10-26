@@ -1,37 +1,28 @@
 /* SchedKo Modal Styles - system font, responsive, green/gold theme */
 
-:root {
-  --schedko-green: #15803d;
-  --schedko-green-dark: #166534;
-  --schedko-gold: #facc15;
-  --schedko-bg: #f8fafc;
-  --schedko-radius: 1.25rem;
-  --schedko-shadow: 0 4px 32px 0 rgba(21,128,61,0.18);
-  --font-lora: 'Lora', serif;
-  --font-jost: 'Jost', sans-serif;
-}
 
-.schedko-modal-overlay {
-  position: fixed;
-  left: 0; top: 0; right: 0; bottom: 0;
-  z-index: 1000;
-  background: rgba(22, 101, 52, 0.10);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-family: var(--font-jost);
+
+.schedko-modal::backdrop {
+  background: rgba(22, 40, 28, 0.35);
 }
 
 .schedko-modal {
   background: #fff;
-  border-radius: var(--schedko-radius);
+  border-radius: 12px;
   box-shadow: var(--schedko-shadow);
   padding: 2rem 1.5rem 1.5rem 1.5rem;
-  max-width: 95vw;
+  max-height: calc(100dvh - 40px);
+  overflow-y: auto;
   width: 100%;
   min-width: 260px;
   max-width: 400px;
   border: 1px solid #e0e7ef;
+  margin: auto;
+  color: var(--ink);
+  width: min(400px, calc(100% - 32px));
+}
+
+.schedko-modal[open] {
   display: flex;
   flex-direction: column;
   gap: 1.25rem;
@@ -112,7 +103,7 @@
 
 @media (max-width: 600px) {
   .schedko-modal {
-    padding: 1.25rem 0.5rem 1rem 0.5rem;
+    padding: 1.5rem;
     min-width: 0;
     max-width: 98vw;
   }
